@@ -18,13 +18,13 @@
 \date{2022 Fall Quarter}
 
 
-\newcommand{\userMarginInMm}{8}
-\geometry{
- left=\userMarginInMm mm,
- right=\userMarginInMm mm,
- top=\userMarginInMm mm,
- bottom=\userMarginInMm mm,
- footskip=5mm}
+% \newcommand{\userMarginInMm}{8}
+% \geometry{
+%  left=\userMarginInMm mm,
+%  right=\userMarginInMm mm,
+%  top=\userMarginInMm mm,
+%  bottom=\userMarginInMm mm,
+%  footskip=5mm}
 
 \newcommand*\circled[1]{\raisebox{.5pt}{\textcircled{\raisebox{-.9pt} {#1}}}}
 \newcommand*\bspace{$\; \bullet \;$}
@@ -62,8 +62,90 @@
 % \tableofcontents
 
 \section{Introduction}
+Priors
+\begin{align*}
+  \theta &= (\sigma^2, \tau, \mu_1, \mu_2, \gamma_1, \gamma_2)\\
+  p(\sigma^2) &\propto \frac{1}{\sigma^2}\\
+  p(\tau) &\sim Unif[0, 1]\\
+  p(\mu) &= p(\mu_1, \mu_2) \propto 1 \textrm{ (improper uniform)}\\
+  p(\gamma) &= p(\gamma_1, \gamma_2) \propto 1 \textrm{ (improper uniform)}\\
+\end{align*}
+Gene expression distributions
+\begin{align*}
+  (y_i | g_i = 1) &\sim N(\mu, \sigma^2 I)\\
+  (y_i | g_i = 2) &\sim N(\gamma, \sigma^2 I)\\
+  (y_i | g_i = 3) &\sim N(\frac{1}{2}(\mu + \gamma), \sigma^2 I)\\
+  (y_i | g_i = 4) &\sim N(\tau\mu + (1-\tau)\gamma, \sigma^2 I)
+\end{align*}
+Likelihood
+\begin{align*}
+  L(Y | \theta) =& \prod_{i=1}^n p(y_i | \theta) \textrm{, for } Y = (y_i, \dots, y_n)\\
+  =& \prod_{i \in g_1} \frac{1}{\sqrt{2\pi\sigma^2}} \exp[-\frac{1}{2\sigma^2} (y_i - \mu)^T(y_i - \mu)] \times  
+     \prod_{i\in g_2} \frac{1}{\sqrt{2\pi\sigma^2}} \exp[-\frac{1}{2\sigma^2} (y_i - \gamma)^T(y_i - \gamma)]\\
+  &\times \prod_{i\in g_3} \frac{1}{\sqrt{2\pi\sigma^2}} \exp[-\frac{1}{2\sigma^2} (y_i - \frac{1}{2}(\mu +  
+    \gamma))^T(y_i - \frac{1}{2}(\mu + \gamma))] \\
+  &\times \prod_{i\in g_4} \frac{1}{\sqrt{2\pi\sigma^2}} \exp[-\frac{1}{2\sigma^2} (y_i - (\tau\mu + (1-\tau)\gamma))^T(y_i - (\tau\mu + (1-\tau)\gamma))] \\
+  =& \left(\frac{1}{\sqrt{2\pi\sigma^2}}\right)^n \exp[-\frac{1}{2\sigma^2}(\sum_{i\in g_1}(y_i - \mu)^T(y_i -   \mu) + \sum_{i\in g_2}(y_i - \gamma)^T(y_i - \gamma)\\
+  &+ \sum_{i\in g_3}(y_i - \frac{1}{2}(\mu +  
+  \gamma))^T(y_i - \frac{1}{2}(\mu + \gamma)) + \sum_{i\in g_4}(y_i - (\tau\mu + (1-\tau)\gamma))^T(y_i - (\tau\mu + (1-\tau)\gamma)))]
+\end{align*}
+Posterior
+\begin{align*}
+  p(\theta | Y) \propto p(\theta) L(Y | \theta)
+\end{align*}
+
 \section{Metropolis Hasting}
 \section{Gibbs sampling}
+Posterior conditioned on each parameter
+\begin{align*}
+  p(\theta[i] | Y, \theta[-i]) = \frac{p(\theta[i], \theta[-i] | Y)}{p(\theta[-i] | Y)} = f(\theta[i]) \propto p(\theta | Y) \textrm{ with fixed } \theta[-i], Y
+\end{align*}
+\subsubsection*{Posterior conditional probability of $\tau$}
+\begin{align*}
+  p(\tau | Y, \theta[-\tau]) &\propto p(\theta)L(Y | \theta)\\  
+  & \propto p(\tau)\prod_{i\in g_4} \frac{1}{\sqrt{2\pi\sigma^2}} \exp[-\frac{1}{2\sigma^2} (y_i - (\tau\mu + (1-\tau)\gamma))^T(y_i - (\tau\mu + (1-\tau)\gamma))]\\
+  &\propto \exp[-\frac{1}{2\sigma^2}\sum_{i\in g_4}(y_i - (\tau\mu + (1-\tau)\gamma))^T(y_i - (\tau\mu + (1-\tau)\gamma))] \textrm{, for } \tau \in [0,1]\\
+  &\propto \exp[-\frac{1}{2\sigma^2}\sum_{i\in g_4}(y_i^Ty_i - 2y_i^T(\tau\mu + (1-\tau)\gamma) + (\tau\mu + (1-\tau)\gamma)^T(\tau\mu + (1-\tau)\gamma))] \textrm{, for } \tau \in [0,1]\\
+  &\propto \exp[-\frac{1}{2\sigma^2}\sum_{i\in g_4} \tau^2(\mu^T\mu - 2\mu^T\gamma + \gamma^T\gamma) - 2\tau(y_i^T\mu - y_i^T\gamma - \mu^T\gamma + \gamma^T\gamma)]\textrm{, for } \tau \in [0,1]\\
+  &\propto \exp[-\frac{1}{2\sigma^2}(n_4 \tau^2(\mu - \gamma)^T(\mu - \gamma) - 2\tau(\mu - \gamma)^T[\sum_{i\in g_4}(y_i - \gamma) \textrm{, for } \tau \in [0,1]\\
+  &\propto \exp\left[-\frac{1}{2}*\frac{n_4(\mu - \gamma)^T(\mu - \gamma)}{\sigma^2}\left(\tau - \frac{(\mu - \gamma)^T(\sum_{i\in g_4}(y_i - \gamma))}{(\mu - \gamma)^T(\mu - \gamma)}\right)^2\right] \textrm{, for } \tau \in [0,1]\\
+  &\sim Norm\left(\mu=\frac{(\mu - \gamma)^T(\sum_{i\in g_4}(y_i - \gamma))}{(\mu - \gamma)^T(\mu - \gamma)}, \sigma^2=\frac{\sigma^2}{n_4(\mu - \gamma)^T(\mu - \gamma)}\right) \textrm{, truncated to } [0,1]
+\end{align*}
+
+\subsubsection*{Posterior conditional probability of $\sigma^2$}
+\begin{align*}
+  p(\sigma^2 | Y, \theta[-\sigma^2]) \propto& p(\theta)L(Y | \theta) \propto p(\sigma^2) \prod_{i=1}^n p(y_i | \theta)\\
+  \propto& \frac{1}{\sigma^2} * \left(\frac{1}{\sigma}\right)^n \exp\left[-\frac{1}{2\sigma^2}M\right] \textrm{, where } M = \\
+  &\;\;\; \sum_{i\in g_1}(y_i - \mu)^T(y_i -   \mu) + \sum_{i\in g_2}(y_i - \gamma)^T(y_i - \gamma)+ \sum_{i\in g_3}(y_i - \frac{1}{2}(\mu +  
+  \gamma))^T(y_i - \frac{1}{2}(\mu + \gamma))\\
+  &\;\;\; + \sum_{i\in g_4}(y_i - (\tau\mu + (1-\tau)\gamma))^T(y_i - (\tau\mu + (1-\tau)\gamma))\\
+  \propto& (\sigma^2)^{-\frac{n}{2} - 1}\exp\left[-\frac{M}{2}\frac{1}{\sigma^2}\right]\\
+  \sim& InvGamma\left(\alpha=\frac{n}{2}, \beta = \frac{M}{2}\right)
+\end{align*}
+
+\subsubsection*{Posterior conditional probability of $\mu$}
+\begin{align*}
+  p(\mu | Y, \theta[-\mu]) \propto& p(\theta)L(Y | \theta)\\
+  \propto& \prod_{i \in g_1} \frac{1}{\sqrt{2\pi\sigma^2}} \exp[-\frac{1}{2\sigma^2} (y_i - \mu)^T(y_i - \mu)]
+    \times \prod_{i\in g_3} \frac{1}{\sqrt{2\pi\sigma^2}} \exp[-\frac{1}{2\sigma^2} (y_i - \frac{1}{2}(\mu +  
+    \gamma))^T(y_i - \frac{1}{2}(\mu + \gamma))] \\
+  &\times \prod_{i\in g_4} \frac{1}{\sqrt{2\pi\sigma^2}} \exp[-\frac{1}{2\sigma^2} (y_i - (\tau\mu + (1-\tau)\gamma))^T(y_i - (\tau\mu + (1-\tau)\gamma))]\\
+  \propto& \exp[-\frac{1}{2\sigma^2}(n_1\mu^T\mu - 2\mu^T\left(\sum_{i\in g_1}y_i\right) - \mu^T\left(\sum_{i\in g_3}y_i\right) + \frac{n_3}{4}\mu^T\mu + \frac{n_3}{2}\mu^T\gamma\\
+  &-2\tau\mu^T\left(\sum_{i\in g_4}y_i\right) + \tau^2n_4\mu^T\mu + 2\tau(1 - \tau)n_4\mu^T\gamma )]\\
+  \propto& \exp\left[-\frac{1}{2\sigma^2}(n_1 + \frac{n_3}{4} + n_4\tau^2)\left(\mu^T\mu - 2\mu^T\frac{\sum_{i \in g_1}y_i + \frac{1}{2}\sum_{i\in g_3}y_i + \tau\sum_{i\in g_4}y_i + (\frac{n_3}{4} + n_4\tau(1 - \tau))\gamma}{n_1 + \frac{n_3}{4} + n_4\tau^2} \right)\right] \\
+  \propto& \exp\left[-\frac{1}{2\phi^2}(\mu - \psi)^T(\mu - \psi)\right] \textrm{, where }\\
+  &\;\;\; \psi = \frac{\sum_{i \in g_1}y_i + \frac{1}{2}\sum_{i\in g_3}y_i + \tau\sum_{i\in g_4}y_i + (\frac{n_3}{4} + n_4\tau(1 - \tau))\gamma}{n_1 + \frac{n_3}{4} + n_4\tau^2} \textrm{, } \phi^2 = \frac{\sigma^2}{n_1 + \frac{n_3}{4} + n_4\tau^2}\\
+  \sim& N(\mu = \psi, \Sigma = \phi^2 I)
+\end{align*}
+
+\subsubsection*{Posterior conditional probability of $\gamma$}
+By symmetry with posterior conditional probability of $\mu$,
+\begin{align*}
+  p(\gamma | Y, \theta[-\gamma]) \sim& N(\mu = \psi', \Sigma = \phi'^2 I) \textrm{, where }\\
+  &\;\;\; \psi' = \frac{\sum_{i \in g_2}y_i + \frac{1}{2}\sum_{i\in g_3}y_i + (1-\tau)\sum_{i\in g_4}y_i + (\frac{n_3}{4} + n_4\tau(1 - \tau))\gamma}{n_2 + \frac{n_3}{4} + n_4(1-\tau)^2} \textrm{, } \phi'^2 = \frac{\sigma^2}{n_2 + \frac{n_3}{4} + n_4(1-\tau)^2}
+\end{align*}
+
+
 \section{Hamiltonian Monte Carlo}
 \section{Importance sampling}
 \end{document}
