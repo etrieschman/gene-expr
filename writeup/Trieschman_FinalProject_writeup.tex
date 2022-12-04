@@ -149,7 +149,13 @@ By symmetry with posterior conditional probability of $\mu$,
   &\;\;\; \psi' = \frac{\sum_{i \in g_2}y_i + \frac{1}{2}\sum_{i\in g_3}y_i + (1-\tau)\sum_{i\in g_4}y_i - (\frac{n_3}{4} + n_4\tau(1 - \tau))\mu}{n_2 + \frac{n_3}{4} + n_4(1-\tau)^2} \textrm{, } \phi'^2 = \frac{\sigma^2}{n_2 + \frac{n_3}{4} + n_4(1-\tau)^2}
 \end{align*}
 
-
 \section{Hamiltonian Monte Carlo}
+
+\begin{align*}
+  H(q, p) =& U(q) + K(p) \textrm{, Hamiltonian function}\\
+  & \textrm{with $U(\cdot)$, potential energy, $K(\cdot)$, kinetic energy, $q \in \mathbb{R}^k$, position, $p \in \mathbb{R}^k$ momentum}\\
+  & \textrm{let } U(\theta) := -\log f(\theta) \textrm{, where } p(\theta | Y) = \frac{1}{C}f(\theta) \textrm{, and } p \sim N(0, \textbf{M})
+\end{align*}
+
 \section{Importance sampling}
 \end{document}

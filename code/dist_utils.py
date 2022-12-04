@@ -1,4 +1,5 @@
 import numpy as np
+import torch
 import scipy.stats as sps
 from tqdm import tqdm
 import matplotlib.pyplot as plt
@@ -6,56 +7,49 @@ import matplotlib.pyplot as plt
 
 # posterior probability
 def prob_post(theta, Y, groups):
-    
     # unravel theta
-    ss, tau, mu1, mu2, gam1, gam2 = theta
-    mu = np.array((mu1, mu2))
-    gam = np.array((gam1, gam2))
+    ss, tau, mu, gam = theta[0], theta[1], theta[2:4], theta[4:6]
     
     #get counts
     __, ns = np.unique(groups, return_counts=True)
     n = ns.sum()
     
-    # make mean vector
-    mean_set = [mu, gam, (mu + gam)/2, tau*mu + (1-tau)*gam]
-    means = []
-    for n_i, mean_i in zip(ns, mean_set):
-        for i in range(n_i):
-            means += [mean_i]
-    means = np.array(means)
-    
-    # sum of squares
-    sum_squares = np.sum(np.square(Y - means))
+    sum_square = (torch.sum(torch.square(Y[groups == 1] - mu)) + 
+                  torch.sum(torch.square(Y[groups == 2] - gam)) + 
+                  torch.sum(torch.square(Y[groups == 3] - (mu + gam)/2)) + 
+                  torch.sum(torch.square(Y[groups == 4] - tau*mu - (1-tau)*gam)))
     
     # calculate unscaled p
-    p = (1/ss)**(n+1) * np.exp((-1/(2*ss)) * sum_squares)
+    p = (1/ss)**(n+1) * torch.exp((-1/(2*ss)) * sum_square)
     return p
 
 
 # Metropolis hasting candidate value
-def value_mh_cand(theta, var_n=0.001, var_c=0.1):
+def value_mh_cand(theta, var_mg=0.001, var_t=0.1, var_ss=0.1):
     ss, tau, mu1, mu2, gam1, gam2 = theta
-    std_n = np.sqrt(var_n)
-    std_c = np.sqrt(var_c)
+    std_mg = np.sqrt(var_mg)
+    std_t = np.sqrt(var_t)
+    std_ss = np.sqrt(var_ss)
     
     x = np.hstack([
-        sps.norm.rvs(loc=np.sqrt(ss), scale=std_c)**2,
-        sps.truncnorm.rvs(a=(0-tau)/std_n, b=(1-tau)/std_n, 
-                            loc=tau, scale=std_n),
-        sps.multivariate_normal.rvs(mean=np.array([mu1, mu2, gam1, gam2]), cov=var_n)])
+        sps.norm.rvs(loc=np.sqrt(ss), scale=std_ss)**2,
+        sps.truncnorm.rvs(a=(0-tau)/std_t, b=(1-tau)/std_t, 
+                            loc=tau, scale=std_t),
+        sps.multivariate_normal.rvs(mean=np.array([mu1, mu2, gam1, gam2]), cov=var_mg)])
     return x
 
 # metropolis hasting candidate probability
-def prob_mh_cand(x, theta, var_n=0.001, var_c=0.1):
+def prob_mh_cand(x, theta, var_mg=0.001, var_t=0.1, var_ss=0.1):
     x_ss, x_tau, x_mu1, x_mu2, x_gam1, x_gam2 = x
     ss, tau, mu1, mu2, gam1, gam2 = theta
-    std_n = np.sqrt(var_n)
-    std_c = np.sqrt(var_c)
+    std_mg = np.sqrt(var_mg)
+    std_t = np.sqrt(var_t)
+    std_ss = np.sqrt(var_ss)
     
-    p = (sps.norm.pdf(x=np.sqrt(x_ss), loc=np.sqrt(ss), scale=std_c) *
-         sps.truncnorm.pdf(x=x_tau, a=(0-tau)/std_n, b=(1-tau)/std_n, loc=tau, scale=std_n) * 
+    p = (sps.norm.pdf(x=np.sqrt(x_ss), loc=np.sqrt(ss), scale=std_ss) * 2 *
+         sps.truncnorm.pdf(x=x_tau, a=(0-tau)/std_t, b=(1-tau)/std_t, loc=tau, scale=std_t) * 
          sps.multivariate_normal.pdf(x=np.array([x_mu1, x_mu2, x_gam1, x_gam2]), 
-                                     mean=np.array([mu1, mu2, gam1, gam2]), cov=var_n))
+                                     mean=np.array([mu1, mu2, gam1, gam2]), cov=var_mg))
         
     return p
 
@@ -70,8 +64,10 @@ def val_gibbs_ss(block_theta, Y, groups):
     n = ns.sum()
 
     # define parameters and draw
-    sum_square = (np.sum(np.square(Y[groups == 1] - mu)) + np.sum(np.square(Y[groups == 2] - gam)) + 
-                 np.sum(np.square(Y[groups == 3] - (mu + gam)/2)) + np.sum(np.square(Y[groups == 4] - tau*mu - (1-tau)*gam)))
+    sum_square = (np.sum(np.square(Y[groups == 1] - mu)) + 
+                  np.sum(np.square(Y[groups == 2] - gam)) + 
+                  np.sum(np.square(Y[groups == 3] - (mu + gam)/2)) + 
+                  np.sum(np.square(Y[groups == 4] - tau*mu - (1-tau)*gam)))
 
     prop_ss = sps.invgamma.rvs(a=(n/2), scale=np.sqrt(sum_square/2))
     return prop_ss
@@ -144,3 +140,10 @@ def val_gibbs_gam(block_theta, Y, groups):
     prop_gam = np.array([sps.norm.rvs(loc=mean_gam[0], scale=std_gam),
                         sps.norm.rvs(loc=mean_gam[1], scale=std_gam)])
     return prop_gam
+
+
+# hamiltonian MC proposal function
+def prob_HMC(theta, Y, groups, p, M_inv):
+    p = (torch.exp(torch.log(prob_post(theta=theta, Y=Y, groups=groups)) - 
+                   (1/2)*(torch.matmul(torch.matmul(p, M_inv),p))))
+    return p
