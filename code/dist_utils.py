@@ -14,13 +14,19 @@ def prob_post(theta, Y, groups):
     __, ns = np.unique(groups, return_counts=True)
     n = ns.sum()
     
+    # sumsquare
     sum_square = (torch.sum(torch.square(Y[groups == 1] - mu)) + 
                   torch.sum(torch.square(Y[groups == 2] - gam)) + 
                   torch.sum(torch.square(Y[groups == 3] - (mu + gam)/2)) + 
                   torch.sum(torch.square(Y[groups == 4] - tau*mu - (1-tau)*gam)))
     
+    # indicators for domain
+    # ss_in = 1*(ss > 0)
+    # tau_in = 1*(tau <= 1)*(tau >= 0)
+    
     # calculate unscaled p
     p = (1/ss)**(n+1) * torch.exp((-1/(2*ss)) * sum_square)
+    # p = p * ss_in * tau_in
     return p
 
 
@@ -142,8 +148,8 @@ def val_gibbs_gam(block_theta, Y, groups):
     return prop_gam
 
 
-# hamiltonian MC proposal function
-def prob_HMC(theta, Y, groups, p, M_inv):
-    p = (torch.exp(torch.log(prob_post(theta=theta, Y=Y, groups=groups)) - 
-                   (1/2)*(torch.matmul(torch.matmul(p, M_inv),p))))
+# HMC function
+def prob_HMC(theta, p, M_inv, Y, groups):
+    p = torch.exp(torch.log(prob_post(theta, Y, groups)) - 
+        (1/2)*(torch.matmul(p, torch.matmul(M_inv, p))))
     return p
