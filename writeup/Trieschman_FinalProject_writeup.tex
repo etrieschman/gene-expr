@@ -18,13 +18,13 @@
 \date{2022 Fall Quarter}
 
 
-% \newcommand{\userMarginInMm}{8}
-% \geometry{
-%  left=\userMarginInMm mm,
-%  right=\userMarginInMm mm,
-%  top=\userMarginInMm mm,
-%  bottom=\userMarginInMm mm,
-%  footskip=5mm}
+\newcommand{\userMarginInMm}{5}
+\geometry{
+ left=\userMarginInMm mm,
+ right=\userMarginInMm mm,
+ top=\userMarginInMm mm,
+ bottom=\userMarginInMm mm,
+ footskip=5mm}
 
 \newcommand*\circled[1]{\raisebox{.5pt}{\textcircled{\raisebox{-.9pt} {#1}}}}
 \newcommand*\bspace{$\; \bullet \;$}
@@ -174,4 +174,53 @@ By symmetry with posterior conditional probability of $\mu$,
 \end{align*}
 
 \section{Importance sampling}
+Observe that I can draw samples from the following form of our posterior distribution
+\begin{align*}
+  \theta = (\sigma^2, \tau, \mu, \gamma) \sim q(\sigma^2, \tau, \mu, \gamma \mid Y_{1,2,3,4}) &= q(\tau \mid \sigma^2, \mu, \gamma, Y_{1,2,3,4}) \times q(\sigma^2, \mu, \gamma \mid Y_{1,2,3,4})\\
+  &\propto\; q(\tau \mid \sigma^2, \mu, \gamma, Y_{4}) \times q(\sigma^2, \mu, \gamma \mid Y_{1,2}) \times \int_0^1\prod_{i \in {g_3,g_4}}L(y_i \mid \sigma^2, \mu, \gamma, Y_{1,2})d\tau
+\end{align*}
+Since 
+\begin{align*}
+  q(\sigma^2, \mu, \gamma \mid Y_{1,2}) &= q(\sigma^2 \mid \mu, \gamma, Y_{1,2}) \times q(\mu, \gamma \mid Y_{1,2}) \textrm{, where}\\
+  q(\mu, \gamma \mid Y_{1,2}) &\sim...\\
+  q(\sigma^2 \mid \mu, \gamma, Y_{1,2}) &\sim InvGamma\left(\alpha=n_1 + n_2, \beta = \frac{1}{2}\sum_{i\in g_1}\lVert y_i - \mu\rVert^2 + \sum_{i\in g_2}\lVert y_i - \gamma\rVert^2\right)\\
+  q(\tau \mid \sigma^2, \mu, \gamma, Y_{4}) &\sim Norm\left(\mu=\frac{(\mu - \gamma)^T(\sum_{i\in g_4}(y_i - \gamma))}{n_4(\mu - \gamma)^T(\mu - \gamma)}, \sigma^2=\frac{\sigma^2}{n_4(\mu - \gamma)^T(\mu - \gamma)}\right) \textrm{, truncated to } [0,1]\\
+  \int_0^1\prod_{i \in {g_3,g_4}}L(y_i \mid \sigma^2, \mu, \gamma, Y_{1,2})d\tau &\propto \exp\left[-\frac{1}{2\sigma^2}\sum_{i \in g_3}\left|\left| y_i - \frac{1}{2}(\mu - \gamma)\right|\right|^2\right]
+\end{align*}
+
+\begin{itemize}
+  \item Step 1: draw $(\sigma^2, \mu, \gamma) \sim q(\sigma^2, \mu, \gamma \mid Y_{1,2})$
+  \item Step 2: draw $\tau \sim q(\tau \mid \sigma^2, \mu, \gamma, Y_4)$
+  \item Step
+  % \item Repeat and calculate q(theta), p(theta | Y1234), u_i = p(theta_i)/q(theta_i)
+  % \item Weight samples: sigma_i_hat = sigmai * u_i / sum(u_is)
+  % \item calculate statistics
+\end{itemize}
+
+Derivation of group 3 and 4 likelihood for candidate distribution
+\begin{align*}
+  \int_0^1\prod_{i \in {g_3,g_4}}L(y_i \mid \sigma^2, \mu, \gamma, Y_{1,2})d\tau &\propto\; \int_0^1\exp\left[-\frac{1}{2\sigma^2}\sum_{i\in g_3}\left|\left| y_i - \frac{1}{2}(\mu - \gamma)\right|\right|^2 - \frac{1}{2\sigma^2}\sum_{i\in g_4}\left|\left| y_i - \tau\mu - (1-\tau)\gamma\right|\right|^2\right]d\tau\\
+  &\propto\; \exp\left[-\frac{1}{2\sigma^2}\sum_{i \in g_3}\left|\left| y_i - \frac{1}{2}(\mu - \gamma)\right|\right|^2\right]\\
+  &\;\;\;\; \times \int_0^1 \exp\left[-\frac{1}{2}*\frac{n_4(\mu - \gamma)^T(\mu - \gamma)}{\sigma^2}\left(\tau - \frac{(\mu - \gamma)^T(\sum_{i\in g_4}(y_i - \gamma))}{n_4(\mu - \gamma)^T(\mu - \gamma)}\right)^2\right]d\tau\\
+  &\propto\; \exp\left[-\frac{1}{2\sigma^2}\sum_{i \in g_3}\left|\left| y_i - \frac{1}{2}(\mu - \gamma)\right|\right|^2\right]
+\end{align*}
+
+
+Derivation of sigma squared conditional on mu, gamma, and groups 1/2
+\begin{align*}
+  q(\sigma^2 \mid \mu, \gamma, Y_{1,2})\propto&\;\; \frac{1}{\sigma^2} * \left(\frac{1}{\sigma^2}\right)^{n_1 + n_2} \exp\left[-\frac{1}{2\sigma^2}M\right] \textrm{, where } M = \sum_{i\in g_1}(y_i - \mu)^T(y_i -   \mu) + \sum_{i\in g_2}(y_i - \gamma)^T(y_i - \gamma)\\
+  \propto&\;\; (\sigma^2)^{-n_1 - n_2 - 1}\exp\left[-\frac{M}{2}\frac{1}{\sigma^2}\right]\\
+  \sim& InvGamma\left(\alpha=n_1 + n_2, \beta = \frac{M}{2}\right)
+\end{align*}
+
+Derivation of marginal distribution of mu and gamma conditional on groups 1/2
+\begin{align*}
+  q(\mu, \gamma \mid Y_{1,2}) =& \int_0^\infty q(\mu, \gamma, \sigma^2 \mid Y_{1,2})d\sigma^2\\
+  \propto&\; \int_0^\infty\left(\frac{1}{\sigma^2}\right)^{n_1 + n_2 + n_3 + 1} \exp\left[-\frac{1}{2\sigma^2}(\sum_{i\in g_1} \lVert y_i - \mu\rVert^2 + \sum_{i\in g_2}\lVert y_i - \gamma \rVert^2\right]d\sigma^2\\
+  \propto&\; \Gamma(n_1 + n_2) \left(-\frac{1}{2}  \sum_{i\in g_1} \lVert y_i - \mu\rVert^2 + \sum_{i\in g_2}\lVert y_i - \gamma \rVert^2\right)^{-(n_1 + n_2)}, \textrm{ where } \frac{\Gamma(\alpha)}{\beta^\alpha} = \int_0^\infty (\sigma^2)^{-\alpha - 1} \exp\left(\frac{\beta}{\sigma^2}\right)d\sigma^2\\
+  \propto&\; (M_1 + n_1\lVert \overline{Y_1} - \mu \rVert^2 + n_2\lVert \overline{Y_2} - \gamma \rVert^2)^{-(n_1 + n_2)}, \textrm{ where } M_1 = \sum_{i\in g_1}\lVert y_i - \overline{Y_1} \rVert^2 + \sum_{i\in g_2}\lVert y_i - \overline{Y_2} \rVert^2\\
+  \propto&\; \left(M_1 + M_2 + n_1\mu^T\mu - 2n_1\mu^T\overline{Y_1} + n_1\overline{Y_1}^T\overline{Y_1} + n_2\gamma^T\gamma - 2n_2\gamma^T\overline{Y_2} + n_2\overline{Y_2}^T\overline{Y_2}\right)^{-(n_1 + n_2)}\\
+  \propto&\; \dots\\
+  \propto&\; \left[1 + \frac{1}{\nu}(x - \eta)^T\Sigma^{-1}(x - \eta)\right]^{-\frac{\nu + 4}{2}}, \textrm{where } \nu=XX, \Sigma=XXX, \eta=XX
+\end{align*}
 \end{document}
