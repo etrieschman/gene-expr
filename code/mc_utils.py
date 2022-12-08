@@ -45,12 +45,12 @@ def MH(x, Y, groups, var_mg, var_t, var_ss, T, verbose=True):
 
 # leapfrog integrator
 def leapfrog(q, p, Y, groups, M_inv, eps):
-    q_cand = q.detach().requires_grad_()
+    q_cand = q.detach().clone().requires_grad_()
     
     # a. update p
-    log_prob_post = torch.log(prob_post(theta=q, Y=Y, groups=groups))
+    log_prob_post = torch.log(prob_post(theta=q_cand, Y=Y, groups=groups))
     log_prob_post.backward()
-    p_cand = p + (eps/2)*q.grad
+    p_cand = p + (eps/2)*q_cand.grad
 
     # b. update q
     q_cand = q + eps*torch.matmul(M_inv, p_cand)
@@ -60,7 +60,7 @@ def leapfrog(q, p, Y, groups, M_inv, eps):
     log_prob_post = torch.log(prob_post(theta=q_cand, Y=Y, groups=groups))
     log_prob_post.backward()
     p_cand = p_cand + (eps/2)*q_cand.grad
-    
+
     return q_cand, p_cand
 
 
@@ -82,6 +82,7 @@ def HMC(q, p, Y, groups, M, M_inv, eps, L, T, verbose=True):
         cand_ratio = (prob_HMC(theta=q_cand, p=p_cand, Y=Y, groups=groups, M_inv=M_inv) / 
                       prob_HMC(theta=q, p=p, Y=Y, groups=groups, M_inv=M_inv)).detach()
         prob_accept = np.minimum(1, cand_ratio)
+        # print(prob_accept, prob_HMC(theta=q_cand, p=p_cand, Y=Y, groups=groups, M_inv=M_inv).detach(), prob_HMC(theta=q, p=p, Y=Y, groups=groups, M_inv=M_inv).detach())
 
         # Accept or reject
         u = sps.uniform.rvs(loc=0, scale=1)

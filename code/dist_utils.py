@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 
 
 # posterior probability
-def prob_post(theta, Y, groups):
+def prob_post(theta, Y, groups, scale=1000):
     # unravel theta
     ss, tau, mu, gam = theta[0], theta[1], theta[2:4], theta[4:6]
     
@@ -20,13 +20,13 @@ def prob_post(theta, Y, groups):
                   torch.sum(torch.square(Y[groups == 3] - (mu + gam)/2)) + 
                   torch.sum(torch.square(Y[groups == 4] - tau*mu - (1-tau)*gam)))
     
-    # indicators for domain
-    # ss_in = 1*(ss > 0)
-    # tau_in = 1*(tau <= 1)*(tau >= 0)
-    
     # calculate unscaled p
     p = (1/ss)**(n+1) * torch.exp((-1/(2*ss)) * sum_square)
-    # p = p * ss_in * tau_in
+    # add boundary conditions for tau and sigma squared
+    p = (p * 
+        (1 / (1 + torch.exp(-scale*(tau)))) * 
+        (1 / (1 + torch.exp(-scale*(-tau+1)))) * 
+        (1 / (1 + torch.exp(-scale*(ss)))))
     return p
 
 
@@ -38,7 +38,7 @@ def value_mh_cand(theta, var_mg=0.001, var_t=0.1, var_ss=0.1):
     std_ss = np.sqrt(var_ss)
     
     x = np.hstack([
-        sps.norm.rvs(loc=np.sqrt(ss), scale=std_ss)**2,
+        np.exp(sps.norm.rvs(loc=np.log(ss), scale=std_ss)),
         sps.truncnorm.rvs(a=(0-tau)/std_t, b=(1-tau)/std_t, 
                             loc=tau, scale=std_t),
         sps.multivariate_normal.rvs(mean=np.array([mu1, mu2, gam1, gam2]), cov=var_mg)])
@@ -46,13 +46,14 @@ def value_mh_cand(theta, var_mg=0.001, var_t=0.1, var_ss=0.1):
 
 # metropolis hasting candidate probability
 def prob_mh_cand(x, theta, var_mg=0.001, var_t=0.1, var_ss=0.1):
-    x_ss, x_tau, x_mu1, x_mu2, x_gam1, x_gam2 = x
-    ss, tau, mu1, mu2, gam1, gam2 = theta
+    x_ss, x_tau, x_mu1, x_mu2, x_gam1, x_gam2 = x.detach().numpy()
+    ss, tau, mu1, mu2, gam1, gam2 = theta.detach().numpy()
     std_mg = np.sqrt(var_mg)
     std_t = np.sqrt(var_t)
     std_ss = np.sqrt(var_ss)
     
-    p = (sps.norm.pdf(x=np.sqrt(x_ss), loc=np.sqrt(ss), scale=std_ss) * 2 *
+    p = (sps.norm.pdf(x=np.log(x_ss), loc=np.log(ss), scale=std_ss) * 
+         np.abs(np.exp(np.log(ss))) * # jacobian for transformation
          sps.truncnorm.pdf(x=x_tau, a=(0-tau)/std_t, b=(1-tau)/std_t, loc=tau, scale=std_t) * 
          sps.multivariate_normal.pdf(x=np.array([x_mu1, x_mu2, x_gam1, x_gam2]), 
                                      mean=np.array([mu1, mu2, gam1, gam2]), cov=var_mg))
@@ -75,7 +76,7 @@ def val_gibbs_ss(block_theta, Y, groups):
                   np.sum(np.square(Y[groups == 3] - (mu + gam)/2)) + 
                   np.sum(np.square(Y[groups == 4] - tau*mu - (1-tau)*gam)))
 
-    prop_ss = sps.invgamma.rvs(a=(n/2), scale=np.sqrt(sum_square/2))
+    prop_ss = sps.invgamma.rvs(a=n, scale=sum_square/2)
     return prop_ss
 
 # gibbs candidate tau
@@ -150,6 +151,5 @@ def val_gibbs_gam(block_theta, Y, groups):
 
 # HMC function
 def prob_HMC(theta, p, M_inv, Y, groups):
-    p = torch.exp(torch.log(prob_post(theta, Y, groups)) - 
-        (1/2)*(torch.matmul(p, torch.matmul(M_inv, p))))
-    return p
+    prob = prob_post(theta, Y, groups)*torch.exp(-(1/2)*torch.matmul(p, torch.matmul(M_inv, p)))
+    return prob
