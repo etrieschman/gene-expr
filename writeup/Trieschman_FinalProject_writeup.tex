@@ -128,9 +128,9 @@ I next observe that the posterior, $p(\sigma^2, \mu, \gamma \mid Y_{1,2})$ can b
 \begin{align*}
   q(\sigma^2, \mu, \gamma \mid Y_{1,2}) &= q(\mu, \gamma \mid Y_{1,2}) \times q(\sigma^2 \mid \mu, \gamma, Y_{1,2}) \textrm{, where}\\
   q(\mu, \gamma \mid Y_{1,2}) &\sim t_4\left(\mu= \left(\begin{matrix*}
-    \overline{Y_1}\\ \overline{Y_2} \end{matrix*}\right), \Sigma=\frac{\sum_{i\in g_1}\lVert y_i - \overline{Y_1} \rVert^2 + \sum_{i \in g_2}\lVert y_i - \overline{Y_2}\rVert^2}{2(n_1 + n_2) - 4}\left(\begin{matrix*}
+    \overline{Y_1}\\ \overline{Y_2} \end{matrix*}\right), \Sigma=\frac{\sum_{i\in g_1}\lVert y_i - \overline{Y_1} \rVert^2 + \sum_{i \in g_2}\lVert y_i - \overline{Y_2}\rVert^2}{\nu}\left(\begin{matrix*}
       n_1^{-1} & 0 & 0 & 0 \\ 0 & n_1^{-1} & 0 & 0 \\ 0 & 0 & n_2^{-1} & 0 \\ 0 & 0 & 0 & n_2^{-1}
-    \end{matrix*}\right)\right)\\
+    \end{matrix*}\right), \nu=2(n_1 + n_2) - 4\right)\\
   q(\sigma^2 \mid \mu, \gamma, Y_{1,2}) &\sim InvGamma\left(\alpha=n_1 + n_2, \beta = \frac{1}{2}\sum_{i\in g_1}\lVert y_i - \mu\rVert^2 + \sum_{i\in g_2}\lVert y_i - \gamma\rVert^2\right)
 \end{align*}
 Lastly, I note that for a trial density $q(\theta) := p(\sigma^2, \mu, \gamma \mid Y_{1,2}) \times p(\tau)$, I can estimate unnormalized sample weights in a straightforward manner. Notably
@@ -249,12 +249,12 @@ By symmetry with posterior conditional probability of $\mu$,
   \propto&\; \Gamma(n_1 + n_2) \left(-\frac{1}{2}  \sum_{i\in g_1} \lVert y_i - \mu\rVert^2 + \sum_{i\in g_2}\lVert y_i - \gamma \rVert^2\right)^{-(n_1 + n_2)}, \textrm{ where } \frac{\Gamma(\alpha)}{\beta^\alpha} = \int_0^\infty (\sigma^2)^{-\alpha - 1} \exp\left(\frac{\beta}{\sigma^2}\right)d\sigma^2\\
   \propto&\; (M + n_1\lVert \overline{Y_1} - \mu \rVert^2 + n_2\lVert \overline{Y_2} - \gamma \rVert^2)^{-(n_1 + n_2)}, \textrm{ where } M = \sum_{i\in g_1}\lVert y_i - \overline{Y_1} \rVert^2 + \sum_{i\in g_2}\lVert y_i - \overline{Y_2} \rVert^2\\
   \propto&\; \left(M + \left[\left(\begin{matrix}\mu\\ \gamma\end{matrix}\right) - \left(\begin{matrix*}\overline{Y_1}\\ \overline{Y_2}\end{matrix*}\right)\right]^T \left(\begin{matrix*} n_1 & 0 & 0 & 0 \\ 0 & n_1 & 0 & 0 \\ 0 & 0 & n_2 & 0 \\ 0 & 0 & 0 & n_2 \end{matrix*}\right) \left[\left(\begin{matrix}\mu\\ \gamma\end{matrix}\right) - \left(\begin{matrix*}\overline{Y_1}\\ \overline{Y_2}\end{matrix*}\right)\right]\right)^{-(n_1 + n_2)}\\
-  \propto&\; \left(1 + \frac{1}{2(n_1 + n_2) - 4}\times\frac{2(n_1 + n_2) - 4}{M}\left[\left(\begin{matrix}\mu\\ \gamma\end{matrix}\right) - \left(\begin{matrix*}\overline{Y_1}\\ \overline{Y_2}\end{matrix*}\right)\right]^T \left(\begin{matrix*} n_1{-1} & 0 & 0 & 0 \\ 0 & n_1^{-1} & 0 & 0 \\ 0 & 0 & n_2{-1} & 0 \\ 0 & 0 & 0 & n_2{-1} \end{matrix*}\right)^{-1} \left[\left(\begin{matrix}\mu\\ \gamma\end{matrix}\right) - \left(\begin{matrix*}\overline{Y_1}\\ \overline{Y_2}\end{matrix*}\right)\right]\right)^{-(n_1 + n_2)}\\
+  \propto&\; \left(1 + \frac{1}{2(n_1 + n_2) - 4}\times\frac{2(n_1 + n_2) - 4}{M}\left[\left(\begin{matrix}\mu\\ \gamma\end{matrix}\right) - \left(\begin{matrix*}\overline{Y_1}\\ \overline{Y_2}\end{matrix*}\right)\right]^T \left(\begin{matrix*} n_1^{-1} & 0 & 0 & 0 \\ 0 & n_1^{-1} & 0 & 0 \\ 0 & 0 & n_2^{-1} & 0 \\ 0 & 0 & 0 & n_2^{-1} \end{matrix*}\right)^{-1} \left[\left(\begin{matrix}\mu\\ \gamma\end{matrix}\right) - \left(\begin{matrix*}\overline{Y_1}\\ \overline{Y_2}\end{matrix*}\right)\right]\right)^{-(n_1 + n_2)}\\
   \propto&\; \left[1 + \frac{1}{\nu}(x - \eta)^T\Sigma^{-1}(x - \eta)\right]^{-\frac{\nu + 4}{2}}, \textrm{where }\\
-  &\;\; \nu=2(n_1 + n_2) + 4, \Sigma=\frac{M}{2(n_1 + n_2) - 4}\left(\begin{matrix*} n_1{-1} & 0 & 0 & 0 \\ 0 & n_1^{-1} & 0 & 0 \\ 0 & 0 & n_2{-1} & 0 \\ 0 & 0 & 0 & n_2{-1} \end{matrix*}\right), \eta=\left(\begin{matrix*}\overline{Y_1}\\ \overline{Y_2}\end{matrix*}\right)\\
+  &\;\; \nu=2(n_1 + n_2) + 4, \Sigma=\frac{M}{2(n_1 + n_2) - 4}\left(\begin{matrix*} n_1^{-1} & 0 & 0 & 0 \\ 0 & n_1^{-1} & 0 & 0 \\ 0 & 0 & n_2^{-1} & 0 \\ 0 & 0 & 0 & n_2^{-1} \end{matrix*}\right), \eta=\left(\begin{matrix*}\overline{Y_1}\\ \overline{Y_2}\end{matrix*}\right)\\
   q(\mu, \gamma \mid Y_{1,2}) &\sim t_4\left(\mu= \left(\begin{matrix*}
-    \overline{Y_1}\\ \overline{Y_2} \end{matrix*}\right), \Sigma=\frac{\sum_{i\in g_1}\lVert y_i - \overline{Y_1} \rVert^2 + \sum_{i \in g_2}\lVert y_i - \overline{Y_2}\rVert^2}{2(n_1 + n_2) - 4}\left(\begin{matrix*}
+    \overline{Y_1}\\ \overline{Y_2} \end{matrix*}\right), \Sigma=\frac{\sum_{i\in g_1}\lVert y_i - \overline{Y_1} \rVert^2 + \sum_{i \in g_2}\lVert y_i - \overline{Y_2}\rVert^2}{\nu}\left(\begin{matrix*}
       n_1^{-1} & 0 & 0 & 0 \\ 0 & n_1^{-1} & 0 & 0 \\ 0 & 0 & n_2^{-1} & 0 \\ 0 & 0 & 0 & n_2^{-1}
-    \end{matrix*}\right)\right)
+    \end{matrix*}\right), \nu=2(n_1 + n_2) - 4 \right)
 \end{align*}
 \end{document}
