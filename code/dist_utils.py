@@ -4,7 +4,6 @@ import scipy.stats as sps
 from tqdm import tqdm
 import matplotlib.pyplot as plt
 
-
 # posterior probability
 def prob_post(theta, Y, groups, scale=1000):
     # unravel theta

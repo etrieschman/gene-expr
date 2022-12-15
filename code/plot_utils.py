@@ -4,6 +4,9 @@ import statsmodels.api as sm
 from tqdm import tqdm
 import matplotlib.pyplot as plt
 
+REPO_PATH = '/Users/etriesch/dev/gene-expr/'
+RESULTS_PATH = REPO_PATH + 'results/'
+
 
 # plot settings
 def set_plt_settings():
@@ -21,8 +24,8 @@ def set_plt_settings():
     plt.rc('figure', titlesize=BIGGER_SIZE)  # fontsize of the figure title
 
 # plot 2D distributions
-def plot_dist(cands, plot_status=False, status=np.nan, alpha=0.2):
-    fig, ax = plt.subplots(ncols=3, figsize=(16, 6))
+def plot_dist(cands, plot_status=False, status=np.nan, alpha=0.2, fname=None):
+    fig, ax = plt.subplots(ncols=3, figsize=(10, 5))
 
     if not plot_status:
         ax[0].scatter(cands[:, 0], cands[:, 1], color='blue', label='accept', alpha=alpha)
@@ -49,12 +52,14 @@ def plot_dist(cands, plot_status=False, status=np.nan, alpha=0.2):
     ax[0].set(xlabel='ss', ylabel='tau')
     ax[1].set(xlabel='mu1', ylabel='mu2')
     ax[2].set(xlabel='gam1', ylabel='gam2')
+    if fname is not None:
+        plt.savefig(fname=f'{RESULTS_PATH}{fname}.png', bbox_inches='tight')
     plt.show()
 
 # plot marginal distributions
-def plot_marginals(xt, alpha=0.5):
+def plot_marginals(xt, alpha=0.5, fname=None):
     theta_labels = ['ss', 'tau', 'mu1', 'mu2', 'gam1', 'gam2']
-    fig, ax = plt.subplots(ncols=2, figsize=(16, 6), sharey=True, width_ratios=[3,1])
+    fig, ax = plt.subplots(ncols=2, figsize=(10, 5), sharey=True, width_ratios=[3,1])
 
     for i in range(xt.shape[1]):
         ax[0].plot(xt[:,i], alpha=alpha, label=theta_labels[i])
@@ -63,18 +68,22 @@ def plot_marginals(xt, alpha=0.5):
     ax[1].legend()
     ax[0].set(xlabel='iteration', title='samples')
     ax[1].set(title='marginal densities')
+    if fname is not None:
+        plt.savefig(fname=f'{RESULTS_PATH}{fname}.png', bbox_inches='tight')
     plt.show()
 
 # plot autocorrelation
-def plot_acorr(xt, nlags=5000):
+def plot_acorr(xt, nlags=5000, fname=None):
     theta_labels = ['ss', 'tau', 'mu1', 'mu2', 'gam1', 'gam2']
 
-    plt.subplots(figsize=(12, 6))
+    plt.subplots(figsize=(10, 5))
 
     for i in range(xt.shape[1]):
         plt.plot(sm.tsa.acf(xt[:,i], nlags=nlags), alpha=0.75, label=theta_labels[i])
 
     plt.legend()
     plt.xlabel('lag')
-    plt.title('autocorrelation')
+    # plt.title('autocorrelation')
+    if fname is not None:
+        plt.savefig(fname=f'{RESULTS_PATH}{fname}.png', bbox_inches='tight')
     plt.show()
