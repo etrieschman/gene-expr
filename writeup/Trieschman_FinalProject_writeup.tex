@@ -25,8 +25,8 @@
 
 \newcommand{\userMarginInMm}{10}
 \geometry{
- left=12 mm,
- right=12 mm,
+ left=20 mm,
+ right=20 mm,
  top=20 mm,
  bottom=20 mm,
  footskip=5mm}
@@ -66,27 +66,55 @@
 
 % \tableofcontents
 
-\section*{Introduction}
-\begin{itemize}
-  \item Compute quantiles, plot histograms, obtain means, variances and correlation matrix.
-  \item Check convergence of the chain: does the variance of the distribution stabilize? Run two markov chains, how do they compare?
-  \item Hamiltonian: Parameter search. Implement over M, eps, L. See section 3.5 for tuning
-  \item Gibbs: basically show the math
-  \item Metropolis Hasting: choice of candidate distribution. Make sure domain is right for each, could optimize parameters of the candidate distributions
-  \item Importance sampling: TBD
-\end{itemize}
+\section{Introduction}
+In this project I am provided with a labeled dataset of gene expression measurements and I am asked study the the parameters that characterize their distribution. This problem assumes that gene expression measurements follow independent normal distributions, parameterized by the same, unknown, standard deviation, and different, unknown, means. I use Bayesian methods to study these parameters by evaluating the shape, central tendency, and variability of their posterior distribution using priors provided to me in the problem. A full characterization of the provided gene expression models and prior distributions, as well as the form of my target posterior distribution, is included in Appendix \ref{sec:a_post}. 
+
+My parameter of interest, $\theta = (\sigma^2, \tau, \mu_1, \mu_2, \gamma_1, \gamma_2) \in \mathbb{R}^6$, is of high dimension. Calculating the posterior distribution, $p(\theta)$, directly, requires a six-dimensional integral. I choose instead to study statistics generated from samples from this posterior distribution. These I can draw using methods that only require computing a function, $f(\theta)$, that is proportional to the distribution of interest and much easier to compute. In asymptotics, studying statistics calculated from samples of this posterior distribution is analogous to studying the distribution itself.
+
+I consider four sampling methods that enable me to draw samples from my target distribution: Metropolis-Hastings sampling, Gibbs sampling, Hamiltonian Monte Carlo sampling, and Importance sampling. In the sections that follow, I describe my implementation of these sampling methods, including the design choices I make for each, and then present my results from the sample posterior distribution. I conclude this project with a comparison of these techniques, taking into account each one's scalability.
+
+
 
 %------------------------------------------------------------------------
 % METROPOLIS HASTINGS
-\section{Metropolis Hasting}
+\section{Metropolis-Hasting}
 \label{sec:MH}
 \subsection{Implementation}
-In this section I use the Methropolis-Hasting algorithm to generate samples from my posterior distribution of model parameters. At each step, this algorithm requires the choice of a candidate distribution, $q(\theta)$, from which to draw candiate samples, and accepts those samples according to an acceptance probability that is determined by the currently selected sample. Under a sufficient sample size, the statistics generated from my sample approximate the true statistics of the target distribution, which allows me to study this distribution. 
+In this section I use the Methropolis-Hasting algorithm to generate samples from my posterior distribution of model parameters. At each step, this algorithm requires the choice of a candidate distribution, $q(\theta)$, from which to draw candiate samples, and accepts those samples according to an acceptance probability that is determined by the currently selected sample and the function proportional to my posterior distribution, $f(\theta)$.
 
-I choose the candidate distribution at each step to match the support of the target parameter space. To facilitate implementation, I construct distributions with the same shape at each step, only shifted so that the mean of the candidate distribution is located at the current accepted sample point. In this way I can propose candidates with a higher likelihood of being accepted. To facilitate implementation, my candidate distribution is the composition of independent distributions for each parameter. In Algorithm \ref{alg:mh} I present my implemented approach.
+I choose the candidate distribution at each step to match the support of the target parameter space. To facilitate implementation, I construct distributions with the same shape at each step, only shifted so that the mean of the candidate distribution is located at the current accepted sample point. In this way I can propose candidates with a higher likelihood of being accepted. To facilitate implementation, my candidate distribution is the composition of independent distributions for each parameter. 
+
+In Table \ref{tab:mh_cand}, I describe the independent probability distributions used to construct my candidate distribution, assuming at step i that $\theta_i = (\sigma^2_i, \tau_i, \mu_i, \gamma_i)$. Note to generate candidate samples of $\sigma^2$ that lie in the right domain, I use a log-normal distribution. To properly implement this, I include the Jacobian of the transformation, as shown below.
+
+\begin{align}
+  q(\theta \mid \theta_i) &=  q(\sigma^2\mid\sigma^2_i) q(\tau\mid\tau_i)q(\mu\mid\mu_i)q(\gamma \mid \gamma_i), \textrm{ where }\\
+  q(\sigma^2 \mid \sigma^2_i) &= \frac{1}{\sqrt{2\pi\nu_{\sigma^2}}}\exp\left[\frac{1}{2\nu_{\sigma^2}}\left(\log(\sigma^2) - \log(\sigma^2_i)\right)^2\right]\left| \frac{d}{d\sigma^2}\log(\sigma^2)\right|  
+\end{align}
+
+\begin{table}[H]
+  \small
+  \begin{center}
+    \begin{tabular}{llc}
+    \textbf{Parameter} & \textbf{Distribution} & \textbf{Support} \\
+    \midrule
+    $e^{\sigma^2_{i+1}}$ & $Norm(\mu=\log(\sigma^2_i), \sigma^2=\nu_{\sigma^2})$ & $(0, \infty)$\\
+    $\tau_{i+1}$ & $TruncNorm(\mu=\tau_i, \sigma^2=\nu_{\tau}, lb=0, ub=1)$ & $[0, 1]$\\
+    $\mu_{i+1}$ & $Norm(\mu=\mu_i, \Sigma=\nu_{\mu}I)$ & $(-\infty, \infty)$ \\
+    $\gamma_{i+1}$ & $Norm(\mu=\gamma_i, \Sigma=\nu_{\gamma}I)$ & $(-\infty, \infty)$\\
+    \bottomrule
+    \end{tabular}
+    \end{center}
+    \caption{\label{tab:mh_cand} Form of candidate distribution, assuming independence across distributions}
+\end{table}
+
+In this algorithm I have ample flexibility to define my candidate distribution, $q(\theta)$. To tune this algorithm, my objective is to construct a candidate distribution that proposes candidates with high probability of being accepted. After all, the higher the acceptance rate, the more samples I can generate per iteration of the algorithm. 
+
+Yet, naively constructing an effective candidate distribution can be difficult as such a distribution needs to propose samples that i) sufficiently explore the entire parameter space and ii) have a high enough probability of returning to the original sample. In my implementation of this algorithm, I notice a tradeoff between these requirements, where lower-variance distributions around the current sample points increase the acceptance probability, but also increase the autocorrelation between points. Reducing autocorrelation between sample points is important to reduce bias of the overall sample. I use a grid search to optimize this tradeoff by tuning the variance in each distribution above, $(\nu_{\sigma^2}, \nu_\tau, \nu_\mu, \nu_\gamma)$, noting in the literature that an optimal acceptance rate for this tradeoff is between 0.25 and 0.35 when the parameter space is greater than 4 dimensions \cite{Roberts}. Table \ref{tab:mh_gridsearch} in Appendix \ref{sec:a_mh} details the results of my tuning. 
+
+In Algorithm \ref{alg:mh}, I present my implemented approach.
 
 \begin{algorithm}[h]
-  \caption{\label{alg:mh}Metropolis Hastings algorithm}
+  \caption{\label{alg:mh}Metropolis-Hastings algorithm}
     \begin{algorithmic}[1]
       \State $\theta_0 \longleftarrow$  Initialize
       \For{t=0, \dots, T}
@@ -100,40 +128,12 @@ I choose the candidate distribution at each step to match the support of the tar
         \EndIf
       \EndFor
     \end{algorithmic}
-  \end{algorithm}
-
-
-In Table \ref{tab:mh_cand} I describe the independent probability distributions used for my candidate distribution, assuming at step i that $\theta_i = (\sigma^2_i, \tau_i, \mu_i, \gamma_i)$.
-
-\begin{table}[H]
-  \small
-  \begin{center}
-    \begin{tabular}{lr}
-    \textbf{Parameter} & \textbf{Distribution} \\
-    \midrule
-    $e^{\sigma^2_{i+1}}$ & $Norm(\mu=\log(\sigma^2_i), \sigma^2=\nu_{\sigma^2})$\\
-    $\tau_{i+1}$ & $TruncNorm(\mu=\tau_i, \sigma^2=\nu_{\tau}, lb=0, ub=1)$\\
-    $\mu_{i+1}$ & $Norm(\mu=\mu_i, \Sigma=\nu_{\mu}I)$\\
-    $\gamma_{i+1}$ & $Norm(\mu=\gamma_i, \Sigma=\nu_{\gamma}I)$\\
-    \bottomrule
-    \end{tabular}
-    \end{center}
-    \caption{\label{tab:mh_cand} Form of candidate distribution, assuming independence across distributions}
-\end{table}
-
-Note that I transform $\sigma^2$ so that it can follow a log-normal distribution so my proposals lie in its domain. To properly implement this, I include the jacobian of the transformation, as shown below.
-
-\begin{align}
-  q(\theta \mid \theta_i) &=  q(\sigma^2\mid\sigma^2_i) q(\tau\mid\tau_i)q(\mu\mid\mu_i)q(\gamma \mid \gamma_i), \textrm{ where }\\
-  q(\sigma^2 \mid \sigma^2_i) &= \frac{1}{\sqrt{2\pi\nu_{\sigma^2}}}\exp\left[\frac{1}{2\nu_{\sigma^2}}\left(\log(\sigma^2) - \log(\sigma^2_i)\right)^2\right]\left| \frac{d}{d\sigma^2}\log(\sigma^2)\right|  
-\end{align}
-
-In this algorithm I have ample flexibility to define my candidate distribution, $q(\theta)$. To tune this algorithm, my objective is to construct a candidate distribution that proposes candidates with high probability of being accepted. After all, the higher the acceptance rate, the more samples I can generate per iteration of the algorithm. 
-
-Yet, naively constructing an effective candidate distribution can be difficult as such a distribution needs to propose samples that i) sufficiently explore the entire parameter space and ii) have a high enough probability of returning to the original sample. In my implementation of this algorithm, I notice a tradeoff between these requirements, where lower-variance distributions around the current sample points increase the acceptance probability, but also increase the autocorrelation between points. Reducing autocorrelation between sample points in important to reduce bias of the overall sample. I use a grid search to optimize this tradeoff by tuning the variance in each distribution above, $(\nu_{\sigma^2}, \nu_\tau, \nu_\mu, \nu_\gamma)$, noting in the literature that an optimal acceptance rate for this tradeoff is between 0.25 and 0.35 when the parameter space is greater than 4 dimensions \cite{Roberts}. Table \ref{tab:mh_gridsearch} in Appendix \ref{sec:a_mh} details the results of my tuning. 
+  \end{algorithm} 
 
 \subsection{Results}
-Below I present results from running the Metropolis-Hastings algorithm for $T=100,000$ iterations. Figure \ref{fig:mh_dist} and Figure \ref{fig:mh_acorr} visualize the acceptance rate of each candidate sample point and the autocorrelation, the two the performance metrics used for the grid search above, and Figure \ref{fig:mh_marg} visualizes the sample points drawn from this algorithm at each step (left side), as well as their accumulated marginal distributions (right side).
+Below I present results from running the Metropolis-Hastings algorithm for $T=100,000$ iterations and hyperparameters, $\nu = (0.01, 0.01, 0.001)$. Figure \ref{fig:mh_dist} and Figure \ref{fig:mh_acorr} visualize the acceptance rate of each candidate sample point and the autocorrelation of each parameter -- these are the two the performance metrics used for the grid search described above. Figure \ref{fig:mh_marg} visualizes the sample points drawn from this algorithm at each step (left side), as well as their accumulated marginal distributions (right side). I also I present univariate statistics in Table \ref{tab:mh_univar} as well as the covariance between each parameter pair in Table \ref{tab:mh_covar}. 
+
+I observe that the Metropolis Hastings algorithm yields a Markov Chain producing samples that have a clear mean and stable variance. I see this best in Figure \ref{fig:mh_marg}, where I observe the algorithm producing samples that explore the upper and lower limits of each parameter value, while also showing a clear central tendency. As expected, each parameter value lies within its domain. While I selected hyperparameters for this model to minimize autocorrelation, I do see that my samples for $\sigma^2$ still have a high autocorrelation (greater than 0.4 after 200 samples), especially relative to the other parameter values which have virtually no autocorrelation after about 50 samples. This could mean that the distribution for $\sigma^2$ is biased, although with such a large sample size this becomes less of a concern. 
 
 \begin{figure}[H]
   \centering
@@ -152,8 +152,6 @@ Below I present results from running the Metropolis-Hastings algorithm for $T=10
   \includegraphics[width=.8\linewidth]{"./mh_marg.png"}
   \caption{\label{fig:mh_marg} Evolution of the Metropolis-Hastings sampling algorithm and accumulated marginal distributions}
 \end{figure}
-
-Next I present univariate statistics in Table \ref{tab:mh_univar} as well as the covariance between each parameter pair in Table \ref{tab:mh_covar}. 
 
 \begin{table}[H]
   \begin{center}
@@ -194,38 +192,42 @@ Next I present univariate statistics in Table \ref{tab:mh_univar} as well as the
 \end{table}
 
 
-% =================================== TODO ====================================
-In these tables I observe PLACEHOLDER
+
+
+
+
+
+
+
 
 
 
 
 % -------------------------------------------------------------------------------
 % GIBBS
-\section{Gibbs sampling}
+\section{Gibbs Sampling}
 \subsection{Implementation}
-In this section I use the Gibbs sampling algorithm to generate samples from my posterior distribution of model parameters. Much like the Metropolis-Hastings algorithm, this approach generates candidate samples from a candidate distribution leveraging the properties of Markov Chains. 
+In this section I use the Gibbs Sampling algorithm to generate samples from my posterior distribution of model parameters. Much like the Metropolis-Hastings algorithm, this approach generates candidate samples from a candidate distribution leveraging the properties of Markov Chains in such a way to ensure these samples follow my target distribution. 
 
-Gibbs sampling is a strict improvement over the naive Metropolis-Hastings algorithm because the algorithm proposes candidates that are accepted at every step. A second advantage of this result is that the proposal candidates also explore the parameter space with very little autocorrelation because the jump probabilities are always sufficiently high. Therefore, Gibbs sampling is capable of maximizing both of the criteria (acceptance probability and autocorrelation) that I seek to tune in my naive Metropolis Hastings algorithm. As we prove in lecture, this success is accomplished because the candidate distributions are simply the target distribution of each parameter, conditional on the values of each other parameter. 
+Gibbs sampling is a strict improvement over the naive Metropolis-Hastings algorithm because the algorithm proposes candidates that are accepted at every step. A second advantage of this result is that the proposal candidates also explore the parameter space with very little autocorrelation because, by construction, the proposals are able to explore the entire parameter space. Therefore, Gibbs sampling is capable of maximizing both of the criteria (acceptance probability and autocorrelation) that I seek to tune in my naive Metropolis Hastings algorithm. As we prove in lecture, this success is accomplished because the candidate distributions are simply the target distribution of each parameter, conditional on the values of each other parameter. 
 
 \begin{align}
   p(\theta[i] \mid Y, \theta[-i]) = \frac{p(\theta[i], \theta[-i] \mid Y)}{p(\theta[-i] | Y)} = f(\theta[i]) \propto p(\theta \mid Y) \textrm{ with fixed } \theta[-i], Y
 \end{align}
 
-The challenge presented by Gibbs sampling is the need for a closed form probability distribution for each conditional target distribution. Fortunately, in this project I was able to derive these distributions; my work is included in Appendix \ref{sec:a_gibbs}. In the general case, however, such closed form distributions may not exist.
+The challenge presented by Gibbs Sampling is the need for a closed form probability distribution for each conditional target distribution. Fortunately, in this project I was able to derive these distributions, but in the general case such closed form distributions may not exist. I choose to implement the blocked version of Gibbs sampling for variables $\mu$ and $\gamma$ because of the simplicity of calculating their joint conditional distributions. I expect this to minorly improve the efficiency of my algorithm as this reduces the number of separate draws from conditional distributions I must make. I present my derivations of these calculations in Appendix \ref{sec:a_gibbs}. 
 
-While the Gibbs sampling algorithm does not require hyperparameter tuning, it does require that I determine order in which to scan and update the candidate parameter values. The two most common approaches are i) a systematic scan of the variables in the same order in each algorithm step and ii) a random scan of the variables (without replacement) in each algorithm step. I choose the latter approach, although I note that both approaches yield very similar results. 
+While the Gibbs sampling algorithm does not require hyperparameter tuning, it does require that I determine the order in which I scan and update the candidate parameter values. The two most common approaches are i) a systematic scan of the variables in the same order in each algorithm step and ii) a random (without replacement) scan of the variables in each algorithm step. I choose the latter approach, although I note that both approaches yield very similar results. I present my implemented Gibbs sampling approach using random scan in Algorithm \ref{alg:gibbs}. 
 
-I present my implemented Gibbs sampling approach in Algorithm \ref{alg:gibbs}. 
 \begin{algorithm}[H]
   \caption{\label{alg:gibbs}Gibbs sampling algorithm}
     \begin{algorithmic}[1]
       \State $\theta_0 \longleftarrow$  Initialize
       \For{t=0, \dots, T}
-        \State $idx \longleftarrow$ Shuffle($0,1,2,3,4,5$) \Comment{Randomize index order}
+        \State $idx \longleftarrow$ Shuffle($0,1,2,3$) \Comment{Randomize index order, only 4 indices because of my block approach}
         \State $\theta_{cand} \longrightarrow \theta_t$
-        \For{i in {$idx$}}
-          \State $\theta_{cand}[i] \sim p(\theta[i] \mid Y, \theta_{cand}[-i])$
+        \For{i in {$idx$}} \Comment{$\theta[i]$ denotes $\theta$'s $i$'th component}
+          \State $\theta_{cand}[i] \sim p(\theta[i] \mid Y, \theta_{cand}[-i])$ \Comment{$\theta[-i]$ denotes the vector excluding the $i$'th component}
         \EndFor
         \State $\theta_{t+1} \longleftarrow \theta_{cand}$
       \EndFor
@@ -234,27 +236,27 @@ I present my implemented Gibbs sampling approach in Algorithm \ref{alg:gibbs}.
 
 
 \subsection{Results}
-Below I present results from running the Gibbs sampling algorithm for $T=100,000$ iterations. Figure \ref{fig:mh_dist} and Figure \ref{fig:mh_acorr} visualize the acceptance rate of each candidate sample point and the autocorrelation, the two the performance metrics used for the grid search above, and Figure \ref{fig:mh_marg} visualizes the sample points drawn from this algorithm at each step (left side), as well as their accumulated marginal distributions (right side).
+Below I present results from running the Gibbs Sampling algorithm for $T=100,000$ iterations. Figure \ref{fig:mh_dist} and Figure \ref{fig:mh_acorr} visualize the joint distributions of samples, and the autocorrelation. Figure \ref{fig:mh_marg} visualizes the sample points drawn from this algorithm at each step (left side), as well as their accumulated marginal distributions (right side). I also present univariate statistics in Table \ref{tab:gibbs_univar} as well as the covariance between each parameter pair in Table \ref{tab:gibbs_covar}. 
+
+As I expect, I observe that the Gibbs Sampling approach performs well, and outperforms the Metropolis Hastings algorithm. I observe that samples drawn in this method yields a Markov Chain producing samples that have a clear mean and stable variance. I see this best in Figure \ref{fig:mh_marg}, where I observe the algorithm producing samples that explore the upper and lower limits of each parameter value, while also showing a clear central tendency. As expected, each parameter value lies within its domain, and furthermore, I see minimal-to-no autocorrelation across all of my parameter values, addressing a minor concern presented in my Metropolis-Hastings algorithm.
 
 \begin{figure}[H]
   \centering
   \includegraphics[width=.8\linewidth]{"./gibbs_dist.png"}
-  \caption{\label{fig:mh_dist} Bivariate distributions for samples drawn from Gibbs sampling}
+  \caption{\label{fig:gibbs_dist} Bivariate distributions for samples drawn from Gibbs sampling}
 \end{figure}
 
 \begin{figure}[H]
   \centering
   \includegraphics[width=.8\linewidth]{"./gibbs_acorr.png"}
-  \caption{\label{fig:mh_acorr} Autocorrelation for each parameter value drawn from Gibbs sampling}
+  \caption{\label{fig:gibbs_acorr} Autocorrelation for each parameter value drawn from Gibbs sampling}
 \end{figure}
 
 \begin{figure}[H]
   \centering
   \includegraphics[width=.8\linewidth]{"./gibbs_marg.png"}
-  \caption{\label{fig:mh_marg} Evolution of the Gibbs sampling algorithm and accumulated marginal distributions}
+  \caption{\label{fig:gibbs_marg} Evolution of the Gibbs sampling algorithm and accumulated marginal distributions}
 \end{figure}
-
-Next I present univariate statistics in Table \ref{tab:gibbs_univar} as well as the covariance between each parameter pair in Table \ref{tab:gibbs_covar}. 
 
 \begin{table}[H]
   \begin{center}
@@ -287,7 +289,7 @@ Next I present univariate statistics in Table \ref{tab:gibbs_univar} as well as 
       $\mu_1$  & -0.000165 &  0.005188 &  0.016047 &  0.002465 & -0.006474 &  0.000578 \\
       $\mu_2$  & -0.000096 &  0.003529 &  0.002465 &  0.014061 & -0.000331 & -0.005675 \\
       $\gamma_1$ & -0.000002 & -0.000656 & -0.006474 & -0.000331 &  0.023364 & -0.000024 \\
-      $\mu_2$ & -0.000044 &  0.000722 &  0.000578 & -0.005675 & -0.000024 &  0.023471 \\
+      $\gamma_2$ & -0.000044 &  0.000722 &  0.000578 & -0.005675 & -0.000024 &  0.023471 \\
       \bottomrule
       \end{tabular}
   \end{center}
@@ -295,43 +297,136 @@ Next I present univariate statistics in Table \ref{tab:gibbs_univar} as well as 
 \end{table}
 
 
-% =================================== TODO ====================================
-In these tables I observe PLACEHOLDER
-
-
 
 
 % -------------------------------------------------------------------------------
 % HMC
 \section{Hamiltonian Monte Carlo}
-\subsection*{Implementation}
-\begin{itemize}
-  \item Boundary constraints using Rollback HMC: https://arxiv.org/pdf/1709.02855.pdf and Reflection HMC: https://people.cs.umass.edu/~domke/papers/2015nips1.pdf
-\end{itemize}
+\subsection{Implementation}
+In this section I use the Hamiltonian Monte Carlo algorithm to generate samples from my posterior distribution of model parameters. Much like the Metropolis-Hastings algorithm, this approach generates samples from a candidate distribution leveraging the properties of Markov Chains in such a way to ensure that these samples follow my target distribution.
 
-\begin{align*}
+Hamiltonian Monte Carlo offers an approach to constructing candidate distributions with higher acceptance probability that also limit the autocorrelation of sample points. It accomplishes this by augmenting the parameter space to leverage Hamiltonian dymanics. As a non-physicist trying to understand this approach, I picture a marble in a bowl that is the shape of my target distribution. At each step in the algorithm, this marble starts at the current sample location and is flicked in a random direction. It then rolls around the "bowl" according to the laws of physics before its position is captured at a specified time point. The new sample point is set by the marble's location at that time point. Because of how the marble travels in a bowl, we can expect this approach to generate new sample locations in areas of high mass in the bowl (low points) that are sufficiently far from the current sample point (lower autocorrelation). The Hamiltonian functions below leverage a function proportional to my target distribution, $f(\theta)$, and use this in place of a traditional potential energy equation. 
+
+\begin{align}
   H(q, p) =& U(q) + K(p) \textrm{, Hamiltonian function}\\
   & \textrm{with $U(\cdot)$, potential energy, $K(\cdot)$, kinetic energy, $q \in \mathbb{R}^k$, position, $p \in \mathbb{R}^k$ momentum}\\
-  & \textrm{let } U(\theta) := -\log f(\theta) \textrm{, where } p(\theta | Y) = \frac{1}{C}f(\theta) \textrm{, and } p \sim N(0, \textbf{M})
-\end{align*}
+  H(q, p) =& -\log f(\theta) - \frac{1}{2}p^TM^{-1}p\\
+  & \textrm{where } U(\theta) := -\log f(\theta) \textrm{, s.t. } p(\theta | Y) = \frac{1}{C}f(\theta) \textrm{, and } p \sim N(0, \textbf{M})
+\end{align}
 
-\subsection*{Results}
+This equation is evolved through time to simulate the marble rolling around my target distribution to its new location. The probability used to determine the acceptance likelihood is simply ratio of the exponentiated values of the Hamiltonian equations at the starting and ending locations. I use the Leapfrog method to numerically evolve this system. Algorithm \ref{alg:hmc} captures my approach, including this Leapfrog algorithm.
+
+\begin{algorithm}[H]
+  \caption{\label{alg:hmc}Hamiltonian Monte Carlo sampling algorithm}
+    \begin{algorithmic}
+      \State $\theta_0 \longleftarrow$  Initialize
+      \For{t=0, \dots, T}
+        \State $p_t \sim N(\mu=0, \Sigma=M)$
+        \State $\theta_{cand}, p_{cand} \longleftarrow \theta_t, p_t$
+        \For{t=0, \dots, L}
+        \State $\theta_{cand}, p_{cand} \longleftarrow \textrm{Leapfrog}(\theta_{cand}, p_{cand}, \epsilon, M)$
+        \EndFor
+        \State $a_t \longleftarrow \min\left(1, \frac{\exp(-H(\theta_{cand}, p_{cand}))}{\exp(-H(\theta_t, p_t))}\right) = \min\left(1, \frac{\exp(-\log f(\theta_{cand}) - \frac{1}{2}p_{cand}^TM^{-1}p_{cand})}{\exp(-\log f(\theta_t) - \frac{1}{2}p_t^TM^{-1}p_t)}\right)$
+        \State $u_t \sim Unif[0,1]$
+        \If{$u_t \leq a_t$}
+          \State $\theta_{t+1}, p_{t+1} \longleftarrow \theta_{cand}, -p_{cand}$
+        \Else 
+          \State $\theta_{t+1}, p_{t+1} \longleftarrow \theta_t, p_t$
+        \EndIf
+      \EndFor
+      \Procedure{Leapfrog}{$\theta, p, \epsilon, M$}
+        \State $p \longleftarrow p + (\epsilon/2)\nabla_\theta\log f(\theta)$
+        \State $\theta \longleftarrow \theta + \epsilon M^{-1}p$
+        \State $p \longleftarrow p + (\epsilon/2)\nabla_\theta\log f(\theta)$
+      \EndProcedure
+    \end{algorithmic}
+  \end{algorithm}
+
+I face a few design choices in the implementation of my Hamiltonian Monte Carlo sampling method. First, I choose to use PyTorch's autograd functionality to numerically estimate the gradient used in the leapfrog algorithm, instead of solving for the gradient analytically. I chose to do this as the dimension of my parameter space was sufficiently high. 
+
+Second, I face the challenge of constraining the leapfrog algorithm to the support of my parameter space. Specifically, this requires limiting the $\sigma^2$ value to only positive values and restricting the $\tau$ variable to between 0 and 1. I achieve this by implementing a sigmoid approximator for a truncation boundary in my target function, $f(\theta)$ as discussed by Yi et al \cite{Yi}. In this way, my target function becomes 
+
+\begin{align}
+  \tilde{f}(\theta) &= f(\theta) * \frac{1}{1 + e^{-\nu\tau}} * \frac{1}{1 + e^{-\nu(-\tau+1)}} * \frac{1}{1 + e^{-\nu\sigma^2}} \textrm{, for $\nu$ large}\\
+  \textrm{Noting } \tilde{f}(\theta) &\longrightarrow f(\theta) * \mathbb{I}\{\tau \in [0,1]\} * \mathbb{I}\{\sigma^2 > 0\} \textrm{ as } \nu \longrightarrow \infty
+\end{align}
+
+The third design choice I make is for hyperparameters $\epsilon$, the step size used in the Leapfrog algorithm, $L$, the number of iterations of the Leapfrog algorithm, and $M$, the covariance matrix of $p$. Following guidance provided by Thomas et al., I target $\epsilon$ smaller than the magnitude of the parameter of interest and couple it with a large enough $L$ to ensure the trajectory is large enough to draw a candidate sample far enough from the current sample \cite{Thomas}. I implement a grid search - similar to that in the Metropolis Hasting section - targeting an acceptance rate above 0.65, suggested by Neal et al. to be an opptimal acceptance rate \cite{Neal}. Table \ref{tab:hmc_gridsearch} in Appendix \ref{sec:a_hmc} details the results of my tuning.
+
+
+
+\subsection{Results}
+Below I present results from running the Hamiltonian Monte Carlo algorithm for $T=100,000$ iterations. Figure \ref{fig:hmc_dist} and Figure \ref{fig:hmc_acorr} visualize the acceptance rate of each candidate sample point and the autocorrelation, the two the performance metrics used for the grid search above, and Figure \ref{fig:hmc_marg} visualizes the sample points drawn from this algorithm at each step (left side), as well as their accumulated marginal distributions (right side). I also present univariate statistics in Table \ref{tab:hmc_univar} as well as the covariance between each parameter pair in Table \ref{tab:hmc_covar}. 
+
+I observe that the Hamiltonian Monte Carlo approach performs well, yielding a Markov Chain producing samples that have a clear mean and stable variance. I see this best in Figure \ref{fig:mh_marg}, where I observe the algorithm producing samples that explore the upper and lower limits of each parameter value, while also showing a clear central tendency. Interestingly, I observe that the autocorrelation is lowest for $\sigma^2$ using this approach, opposite to that in the Metropolis Hastings approach. While I did not achieve an acceptance rate higher than 0.35 in this analysis, given values from my grid search, I believe this is achievable with more fine tuning.
+
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=.8\linewidth]{"./hmc_dist.png"}
+  \caption{\label{fig:hmc_dist} Bivariate distributions for samples drawn from the HMC algorithm}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=.8\linewidth]{"./hmc_acorr.png"}
+  \caption{\label{fig:hmc_acorr} Autocorrelation for each parameter value drawn from the HMC algorithm}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=.8\linewidth]{"./hmc_marg.png"}
+  \caption{\label{fig:hmc_marg} Evolution of the HMC algorithm and accumulated marginal distributions}
+\end{figure}
+
+\begin{table}[H]
+  \begin{center}
+    \begin{tabular}{lrrrrrr}
+      &$\sigma^2$ & $\tau$ & $\mu_1$ & $\mu_2$ & $\gamma_1$ & $\gamma_2$ \\
+      \midrule
+      mean   &  0.120568 &  0.863886 & -1.433177 & -0.662749 & -0.268818 &  0.329712 \\
+      var    &  0.000406 &  0.006003 &  0.013752 &  0.011229 &  0.021705 &  0.019261 \\
+      median &  0.118352 &  0.869840 & -1.427280 & -0.659320 & -0.269174 &  0.323608 \\
+      p0     &  0.065007 &  0.495930 & -1.908123 & -1.059554 & -0.862452 & -0.143813 \\
+      p10    &  0.096797 &  0.760097 & -1.585403 & -0.799194 & -0.457929 &  0.154746 \\
+      p25    &  0.106273 &  0.810910 & -1.507754 & -0.730388 & -0.364532 &  0.237090 \\
+      p50    &  0.118352 &  0.869840 & -1.427280 & -0.659320 & -0.269174 &  0.323608 \\
+      p75    &  0.132432 &  0.924183 & -1.352740 & -0.591091 & -0.174501 &  0.421964 \\
+      p90    &  0.147103 &  0.963355 & -1.289032 & -0.530516 & -0.082192 &  0.517047 \\
+      p100   &  0.385267 &  1.002555 & -0.997103 & -0.314419 &  0.282297 &  0.813231 \\
+      \bottomrule
+      \end{tabular}
+  \end{center}
+  \caption{\label{tab:hmc_univar} Univariate statistics from samples drawn from the HMC algorithm}
+\end{table}
+
+\begin{table}[H]
+  \begin{center}
+    \begin{tabular}{lrrrrrr}
+      {} & $\sigma^2$ & $\tau$ & $\mu_1$ & $\mu_2$ & $\gamma_1$ & $\gamma_2$ \\
+      \midrule
+      $\sigma^2$   &  0.000406 & -0.000174 & -0.000109 & -0.000148 & -0.000030 &  0.000069 \\
+      $\tau$  & -0.000174 &  0.006003 &  0.004706 &  0.003352 & -0.000798 &  0.000399 \\
+      $\mu_1$  & -0.000109 &  0.004706 &  0.013752 &  0.001797 & -0.006199 &  0.001104 \\
+      $\mu_2$  & -0.000148 &  0.003352 &  0.001797 &  0.011230 & -0.000166 & -0.005065 \\
+      $\gamma_1$ & -0.000030 & -0.000798 & -0.006199 & -0.000166 &  0.021706 & -0.000984 \\
+      $\gamma_2$ &  0.000069 &  0.000399 &  0.001104 & -0.005065 & -0.000984 &  0.019261 \\
+      \bottomrule
+      \end{tabular}
+  \end{center}
+  \caption{\label{tab:hmc_covar} Covariance between parameters from distributions drawn from the HMC algorithm}
+\end{table}
 
 
 % -------------------------------------------------------------------------------
 % IMPORTANCE SAMPLING
 \section{Importance sampling}
 \subsection{Implementation}
-In this section I implement importance sampling with normalization to estimate sample statistics from my posterior distribution of model parameters. This technique allows me to draw samples, $\theta_i$, from a trial distribution, $q(\theta)$, and weight those samples with weights $u_i$ to achieve these sample statistics. Normalization allows me to use this approach for a function proportional to my target distribution, $f(\theta)$, up to an integrating constant (i.e., $p(\theta \mid Y) \propto\; f(\theta))$.
+In this section I implement importance sampling with normalization to estimate sample statistics from my posterior distribution of model parameters. This technique allows me to draw samples, $\theta_i$, from a trial distribution, $q(\theta)$, and weight those samples with weights $w_i$ to achieve these sample statistics. Normalization allows me to use this approach for a function proportional to my target distribution, $f(\theta)$, up to an integrating constant (i.e., $p(\theta \mid Y) \propto\; f(\theta))$.
 
-We show in class that importance sampling with normalization yields weighted samples where the sum of those weighted samples is a biased estimate of the expectation of the target distribution. Further, we have shown that the sum of any function of those weighted samples is a biased estimates of the expectation of that function, under the garget distribution.
+We show in class that importance sampling with normalization yields weighted samples where the sum of those weighted samples is a biased estimate of the expectation of the target distribution. Further, we show that the sum of any function of those weighted samples is a biased estimates of the expectation of that function, under the target distribution.
 
-\begin{align}
-  \sum_i^n\theta_i w_i &\approxeq E\left[ \theta\right]\\
-  \sum_i^nh(\theta_i)w_i &\approxeq E\left[ h(\theta) \right]
-\end{align}
-
-Like Metropolis-Hasting, implementing this method requires selecting a target distribution. A naive approach to this involves selecting a multivariate t-distribution with support covering that of the target distribution. The t-distribution with a low degree of freedom is a good choice for such a candidate because of its wider tails, allowing samples to be drawn with higher likelihood over a wider range. 
+Like Metropolis-Hasting, implementing this method requires selecting a target distribution. A naive approach to this could involve selecting a multivariate t-distribution with support covering that of the target distribution. The t-distribution with a low degree of freedom is a good choice for such a candidate because of its wider tails, allowing samples to be drawn with higher likelihood over a wider range. 
 
 In this instance, however, I notice that I can implement a form of two-stage Importance Sampling where I can construct a candidate distribution closer to my target distribution. This is desireable because drawing samples closer to my target distribution can increase the efficiency of my algorithm.
 
@@ -354,11 +449,10 @@ Lastly, I note that for a trial density $q(\theta) := p(\sigma^2, \mu, \gamma \m
 \begin{align}
   w_i := \frac{p(\theta_i)}{q(\theta_i)} = \frac{p(\sigma^2, \tau, \mu, \gamma \mid Y)}{p(\sigma^2, \mu, \gamma \mid Y_{1,2}) \times p(\tau)} \propto\; \frac{p(\sigma^2, \mu, \gamma \mid Y_{1,2}) \times p(\tau) \times \prod_{i\in g_3, g_4} L(y_i \mid \sigma^2, \tau, \mu, \gamma)}{p(\sigma^2, \mu, \gamma \mid Y_{1,2})\times p(\tau)} = \prod_{i\in g_3, g_4} L(y_i \mid \sigma^2, \tau, \mu, \gamma) =: u_i
 \end{align}
-Using the normalization method proved in class lecture, it follows cleanly that $w_i = u_i / \sum_{j=1}^nu_j$. I present all derivations of the distributions above in Appendix \ref{sec:a_is}.
+Using the normalization method proved in class lecture, it follows cleanly that $w_i = u_i / \sum_{j=1}^nu_j$. I present all derivations of the distributions above in Appendix \ref{sec:a_is} and I present my sampling method below in Algorithm \ref{alg:is}.
 
-My sampling method is therefore
-\begin{algorithm}
-\caption{Importance sampling}
+\begin{algorithm}[H]
+\caption{\label{alg:is} Importance sampling}
   \begin{algorithmic}
     \State $\theta_0 \longleftarrow$  Initialize
     \For{t=1, \dots, T}
@@ -371,16 +465,151 @@ My sampling method is therefore
     \State $\hat{\boldsymbol{\theta}} = \boldsymbol{\theta}*\textbf{w}$ \Comment{element-wise product; $\boldsymbol{\theta}$ is a vector of all $\theta_i$} 
   \end{algorithmic}
 \end{algorithm}
-\subsection*{Design choices, tuning, and scalability}
-\subsection*{Results}
 
+Unlike the Metropolis-Hastings, Gibbs Sampling, and Hamiltonian Monte Carlo sampling approaches that enable me to draw samples from my target distribution, Importance Sampling only enables me to estimate sample statistics from my target distribution, in the form
+\begin{align}
+  \sum_i^n\theta_i w_i &\approxeq E\left[ \theta\right]\\
+  \sum_i^nh(\theta_i)w_i &\approxeq E\left[ h(\theta) \right]
+\end{align}
+Below I list the statistics that I consider, and the functions, $h(\theta)$, I use to calculate each.
+\begin{itemize}
+  \item Expectation: $h(\theta[i]) = \theta[i]$
+  \item Variance: $h(\theta[i]) = \left(\theta[i] - \frac{1}{n}\sum_k^n\theta[i]_k\right)^2$
+  \item Covariance: $h(\theta[i], \theta[j]) = \left(\theta[i] - \frac{1}{n}\sum_k^n\theta[i]_k\right)\left(\theta[j] - \frac{1}{n}\sum_k^n\theta[j]_k\right)$
+  \item $P(\theta[i] \in A)$: $h(\theta[i]) = \mathcal{I}\{ \theta[i] \in A \}$
+\end{itemize}
+
+\subsection{Results}
+Below I present results from running the Importance Sampling algorithm for $T=1,000,000$ iterations. Table \ref{tab:is_univar} includes my estimates of mean and variance, Table \ref{tab:is_covar} includes my estimates of covariance, and Figure \ref{fig:is_marg} presents a histogram representation of the samples drawn for my target distribution. I observe close alignment between these statistics and those calculated using the other approaches.
+
+\begin{table}[H]
+  \begin{center}
+    \begin{tabular}{lrrrrrr}
+      &$\sigma^2$ & $\tau$ & $\mu_1$ & $\mu_2$ & $\gamma_1$ & $\gamma_2$ \\
+      \midrule
+      mean &  0.126739 &  0.856402 & -1.436720 & -0.662003 & -0.270092 &  0.323731 \\
+      var  &  0.004417 &  0.134849 &  0.017131 &  0.071006 &  0.029327 &  0.044514 \\
+      \bottomrule
+      \end{tabular}
+  \end{center}
+  \caption{\label{tab:is_univar} Univariate statistics from samples drawn using Importance Sampling}
+\end{table}
+
+\begin{table}[H]
+  \begin{center}
+    \begin{tabular}{lrrrrrr}
+      {} & $\sigma^2$ & $\tau$ & $\mu_1$ & $\mu_2$ & $\gamma_1$ & $\gamma_2$ \\
+      \midrule
+      $\sigma^2$&   0.004417 &  0.021157 & -0.002167 & -0.014401 & -0.004432 & -0.008876 \\\
+      $\tau$  &    0.021157 &  0.134849 & -0.007030 & -0.081933 & -0.026803 & -0.051698 \\
+      $\mu_1$  &  -0.002167 & -0.007030 &  0.017131 &  0.010279 & -0.004102 &  0.005337 \\
+      $\mu_2$  &  -0.014401 & -0.081933 &  0.010279 &  0.071006 &  0.016959 &  0.029509 \\
+      $\gamma_1$&  -0.004432 & -0.026803 & -0.004102 &  0.016959 &  0.029327 &  0.011137 \\
+      $\gamma_2$ &   -0.008876 & -0.051698 &  0.005337 &  0.029509 &  0.011137 &  0.044514 \\
+      \bottomrule
+      \end{tabular}
+  \end{center}
+  \caption{\label{tab:is_covar} Covariance between parameters from distributions drawn using Importance Sampling}
+\end{table}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=.8\linewidth]{"./is_marg.png"}
+  \caption{\label{fig:is_marg} Histogram of weighted samples drawn using Importance Sampling}
+\end{figure}
+
+I also include Figure \ref{fig:is_c_dist} and Figure \ref{fig:is_c_marg} revealing the draws from my candidate distribution, $q(\theta)$. I observe that these proposals track closely to the target distribution that I observe from my other sampling algorithms, validating this candidate distribution.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=.8\linewidth]{"./is_c_dist.png"}
+  \caption{\label{fig:is_c_dist} Bivariate distributions for candidate samples (before weighting) drawn using Importance Sampling}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=.8\linewidth]{"./is_c_marg.png"}
+  \caption{\label{fig:is_c_marg} Sample points and accumulated marginal distributions drawn (before weighting) using Importance Sampling}
+\end{figure}
+
+
+
+
+
+
+
+% ------------------------------------------------------------------------------------------------
 \section{Discussion and conclusion}
-PLACEHOLDER -- Compare methods
-% =================================== TODO ====================================
-PLACEHOLDER FOR SCALABILITY
-* MH, gibbs, and IS are O(n) 
-* gibbs and IS are fastest
-* HMC is O(n*l)
+To conclude this project, I compare the results from the four implemented methods to confirm my findings about the posterior distribution motivating this work. 
+
+In Table \ref{tab:c_theta} I present the summary statistics for each parameter value using each approach. Overall, I observe that all methods agree closely (down to 2 decimal points) on the mean of each parameter value. Overall, I see agreement across other statistics like variance, median, and range. I observe that for $\tau$, Importance Sampling yields a variance two orders of magnitude higher, although this might be expected given how I constructed my candidate distribution for Importance Sampling (I simply assumed a uniform distribution on $\tau$). Also noteworthy is that Hamiltonian Monte Carlo reaches narrower limits for $\gamma_1$ and $\gamma_2$ than the other methods by about $0.1 - 0.3$. I suspect that the HMC algorithm could be tuned, in particular the $M$ matrix, in order to address this potential concern. 
+
+In Table \ref{tab:c_overall} I present overall descriptive statistics for each of the approaches, including the achieved acceptance probabilities, a qualitative summary of their autocorrelation, and runtime to generate $100,000$ iterations. As I report, Gibbs sampling performs best across these parameters, with an acceptance rate of 1 and extremely low autocorrelation. My Hamiltonian Monte Carlo method performs roughly as well as the Metropolis Hastings algorithm, but at a much longer runtime.
+
+In considering the scalability of these algorithms, I note that new samples are generated in $\mathcal{O}(n)$ time for Metropolis-Hasting, Gibbs Sampling, and Importance Sampling, while new samples are generated in $\mathcal{O}(nL)$ time for Hamiltonian Monte Carlo. Gibbs Sampling and Importance Sampling, which simply draw from known probability distributions and avoid other steps like calculating the acceptance probability yield slightly better performance. 
+
+
+\begin{table}[H]
+  \begin{center}
+    \begin{tabular}{llrrrrr}
+ \textbf{Sampling approach} & $\theta[i]$ &  \textbf{Mean} & \textbf{Variance} & \textbf{Min} & \textbf{Median} & \textbf{Max} \\
+      \midrule
+           1. Metropolis-Hasting &  $\gamma_1$ & -0.267675 & 0.021396 & -1.003121 & -0.268092 &  0.511373 \\
+               2. Gibbs Sampling &  $\gamma_1$ & -0.268469 & 0.023484 & -0.967721 & -0.268257 &  0.565895 \\
+      3. Hamiltonian Monte Carlo &  $\gamma_1$ & -0.268818 & 0.021705 & -0.862452 & -0.269174 &  0.282297 \\
+          4. Importance Sampling &  $\gamma_1$ & -0.262994 & 0.028709 &       NaN &       NaN &       NaN \\
+          \midrule
+           1. Metropolis-Hasting &  $\gamma_2$ &  0.321261 & 0.021500 & -0.253334 &  0.320839 &  0.908794 \\
+               2. Gibbs Sampling &  $\gamma_2$ &  0.321858 & 0.023579 & -0.447171 &  0.321986 &  1.055153 \\
+      3. Hamiltonian Monte Carlo &  $\gamma_2$ &  0.329712 & 0.019261 & -0.143813 &  0.323608 &  0.813231 \\
+          4. Importance Sampling &  $\gamma_2$ &  0.322258 & 0.044306 &       NaN &       NaN &       NaN \\
+\midrule
+           1. Metropolis-Hasting &   $\mu_1$ & -1.433174 & 0.014490 & -1.976549 & -1.428254 & -0.988145 \\
+               2. Gibbs Sampling &   $\mu_1$ & -1.437019 & 0.015991 & -2.031535 & -1.432194 & -0.924040 \\
+      3. Hamiltonian Monte Carlo &   $\mu_1$ & -1.433177 & 0.013752 & -1.908123 & -1.427280 & -0.997103 \\
+          4. Importance Sampling &   $\mu_1$ & -1.438831 & 0.018104 &       NaN &       NaN &       NaN \\
+\midrule
+           1. Metropolis-Hasting &   $\mu_2$ & -0.660694 & 0.012879 & -1.293310 & -0.656396 & -0.248247 \\
+               2. Gibbs Sampling &   $\mu_2$ & -0.663134 & 0.014178 & -1.258476 & -0.660151 & -0.043384 \\
+      3. Hamiltonian Monte Carlo &   $\mu_2$ & -0.662749 & 0.011229 & -1.059554 & -0.659320 & -0.314419 \\
+          4. Importance Sampling &   $\mu_2$ & -0.663804 & 0.072521 &       NaN &       NaN &       NaN \\
+\midrule
+           1. Metropolis-Hasting &    $\sigma^2$ &  0.114662 & 0.000567 &  0.060772 &  0.112433 &  0.250000 \\
+               2. Gibbs Sampling &    $\sigma^2$ &  0.127170 & 0.000826 &  0.050965 &  0.123141 &  0.707467 \\
+      3. Hamiltonian Monte Carlo &    $\sigma^2$ &  0.120568 & 0.000406 &  0.065007 &  0.118352 &  0.385267 \\
+          4. Importance Sampling &    $\sigma^2$ &  0.127053 & 0.004413 &       NaN &       NaN &       NaN \\
+\midrule
+           1. Metropolis-Hasting &   $\tau$ &  0.861065 & 0.006893 &  0.448267 &  0.867656 &  0.999952 \\
+               2. Gibbs Sampling &   $\tau$ &  0.856402 & 0.007462 &  0.353123 &  0.864109 &  0.999996 \\
+      3. Hamiltonian Monte Carlo &   $\tau$ &  0.863886 & 0.006003 &  0.495930 &  0.869840 &  1.002555 \\
+          4. Importance Sampling &   $\tau$ &  0.850954 & 0.131497 &       NaN &       NaN &       NaN \\
+      \bottomrule
+      \end{tabular}
+\end{center}
+  \caption{\label{tab:c_theta} Comparisson of performance metrics across algorithms}
+\end{table}
+
+
+\begin{table}[H]
+  \begin{center}
+\begin{tabular}{lrrr}
+  \textbf{Sampling approach} &  \textbf{Acceptance rate} & \textbf{Autocorrelation} &  \textbf{100k iter runtime} \\
+  \midrule
+       1. Metropolis-Hasting &  0.35608 &  high & 03:32 \\
+           2. Gibbs Sampling &  1.00000 &   low & 01:37 \\
+  3. Hamiltonian Monte Carlo &  0.32363 &   low & 30.53 \\
+      4. Importance Sampling &      - &  - & 01:08 \\
+  \bottomrule
+  \end{tabular}
+\end{center}
+  \caption{\label{tab:c_overall} Comparisson of performance metrics across algorithms}
+\end{table}
+
+
+
+
+
+
 
 
 
@@ -395,6 +624,7 @@ PLACEHOLDER FOR SCALABILITY
 % Appendix
 \section{Appendix}
 \subsection{Derivation of the posterior, $p(\theta \mid Y)$}
+\label{sec:a_post}
 \subsubsection{Provided models for gene expression}
 \begin{align*}
   (y_i | g_i = 1) &\sim N(\mu, \sigma^2 I)\\
@@ -427,38 +657,38 @@ PLACEHOLDER FOR SCALABILITY
 \subsection{Metropolis Hasting}
 \label{sec:a_mh}
 \subsubsection{Results of hyperparameter tuning}
-\begin{table}
+\begin{table}[H]
   \begin{center}
-\begin{tabular}{lllrr}
+\begin{tabular}{rrrrr}
   $\nu_{\sigma^2}$ & $\nu_\tau$ & $\nu_{\mu, \gamma}$ & \textbf{Acceptance rate} & \textbf{Max lag $\leq 0.2$} \\
   \midrule
-  0.005 &    0.01 &   0.01 &         0.311667 &           94.0 \\
-  0.001 &    0.01 &   0.01 &         0.373333 &           84.0 \\
-  0.050 &    0.01 &   0.01 &         0.253333 &           36.0 \\
-  0.005 &    0.05 &   0.01 &         0.206667 &           79.0 \\
-  0.001 &    0.05 &   0.01 &         0.248333 &           63.0 \\
-  0.050 &    0.05 &   0.01 &         0.198333 &           44.0 \\
-  0.005 &    0.10 &   0.01 &         0.193333 &          153.0 \\
-  0.001 &    0.10 &   0.01 &         0.233333 &           85.0 \\
-  0.050 &    0.10 &   0.01 &         0.171667 &           32.0 \\
-  0.005 &    0.01 &   0.05 &         0.091667 &           65.0 \\
-  0.001 &    0.01 &   0.05 &         0.165000 &          142.0 \\
-  0.050 &    0.01 &   0.05 &         0.110000 &           32.0 \\
-  0.005 &    0.05 &   0.05 &         0.088333 &          157.0 \\
-  0.001 &    0.05 &   0.05 &         0.128333 &          149.0 \\
-  0.050 &    0.05 &   0.05 &         0.066667 &           43.0 \\
-  0.005 &    0.10 &   0.05 &         0.040000 &           89.0 \\
-  0.001 &    0.10 &   0.05 &         0.123333 &          176.0 \\
-  0.050 &    0.10 &   0.05 &         0.055000 &           73.0 \\
-  0.005 &    0.01 &   0.10 &         0.031667 &           68.0 \\
-  0.001 &    0.01 &   0.10 &         0.045000 &          111.0 \\
-  0.050 &    0.01 &   0.10 &         0.045000 &           42.0 \\
-  0.005 &    0.05 &   0.10 &         0.066667 &          165.0 \\
-  0.001 &    0.05 &   0.10 &         0.065000 &           60.0 \\
-  0.050 &    0.05 &   0.10 &         0.026667 &          136.0 \\
-  0.005 &    0.10 &   0.10 &         0.051667 &          156.0 \\
-  0.001 &    0.10 &   0.10 &         0.078333 &          176.0 \\
-  0.050 &    0.10 &   0.10 &         0.023333 &           74.0 \\
+  0.005 &    0.01 &   0.01 &         0.285000 &           36.0 \\
+  0.001 &    0.01 &   0.01 &         0.323333 &           96.0 \\
+  0.050 &    0.01 &   0.01 &         0.240000 &           34.0 \\
+  0.005 &    0.05 &   0.01 &         0.188333 &           40.0 \\
+  0.001 &    0.05 &   0.01 &         0.261667 &          111.0 \\
+  0.050 &    0.05 &   0.01 &         0.181667 &           44.0 \\
+  0.005 &    0.10 &   0.01 &         0.193333 &          106.0 \\
+  0.001 &    0.10 &   0.01 &         0.205000 &          147.0 \\
+  0.050 &    0.10 &   0.01 &         0.156667 &           54.0 \\
+  0.005 &    0.01 &   0.05 &         0.141667 &          108.0 \\
+  0.001 &    0.01 &   0.05 &         0.141667 &           81.0 \\
+  0.050 &    0.01 &   0.05 &         0.090000 &           70.0 \\
+  0.005 &    0.05 &   0.05 &         0.096667 &          101.0 \\
+  0.001 &    0.05 &   0.05 &         0.133333 &          142.0 \\
+  0.050 &    0.05 &   0.05 &         0.041667 &           79.0 \\
+  0.005 &    0.10 &   0.05 &         0.111667 &           56.0 \\
+  0.001 &    0.10 &   0.05 &         0.096667 &          153.0 \\
+  0.050 &    0.10 &   0.05 &         0.031667 &           86.0 \\
+  0.005 &    0.01 &   0.10 &         0.063333 &           94.0 \\
+  0.001 &    0.01 &   0.10 &         0.091667 &          122.0 \\
+  0.050 &    0.01 &   0.10 &         0.040000 &           51.0 \\
+  0.005 &    0.05 &   0.10 &         0.046667 &          129.0 \\
+  0.001 &    0.05 &   0.10 &         0.070000 &          119.0 \\
+  0.050 &    0.05 &   0.10 &         0.045000 &           93.0 \\
+  0.005 &    0.10 &   0.10 &         0.053333 &          139.0 \\
+  0.001 &    0.10 &   0.10 &         0.033333 &          169.0 \\
+  0.050 &    0.10 &   0.10 &         0.040000 &           58.0 \\
  \bottomrule
  \end{tabular}
 \end{center}
@@ -513,6 +743,51 @@ By symmetry with posterior conditional probability of $\mu$,
   &\;\;\; \psi' = \frac{\sum_{i \in g_2}y_i + \frac{1}{2}\sum_{i\in g_3}y_i + (1-\tau)\sum_{i\in g_4}y_i - (\frac{n_3}{4} + n_4\tau(1 - \tau))\mu}{n_2 + \frac{n_3}{4} + n_4(1-\tau)^2} \textrm{, } \phi'^2 = \frac{\sigma^2}{n_2 + \frac{n_3}{4} + n_4(1-\tau)^2}
 \end{align*}
 
+
+\subsection{Hamiltonian Monte Carlo}
+\label{sec:a_hmc}
+\subsubsection{Results of hyperparameter tuning}
+\begin{table}[H]
+  \begin{center}
+\begin{tabular}{rrrr}
+  \textbf{Scale of M} & \textbf{L} & $\epsilon$ & \textbf{Acceptance rate}\\
+  \midrule
+   1.0 &  5 &   0.0100 &            0.186 \\
+   1.0 &  5 &   0.0010 &            0.410 \\
+   1.0 &  5 &   0.0001 &            0.456 \\
+   1.0 & 10 &   0.0100 &            0.028 \\
+   1.0 & 10 &   0.0010 &            0.400 \\
+   1.0 & 10 &   0.0001 &            0.386 \\
+   1.0 & 20 &   0.0100 &            0.004 \\
+   1.0 & 20 &   0.0010 &            0.338 \\
+   1.0 & 20 &   0.0001 &            0.406 \\
+   1.5 &  5 &   0.0100 &            0.272 \\
+   1.5 &  5 &   0.0010 &            0.386 \\
+   1.5 &  5 &   0.0001 &            0.462 \\
+   1.5 & 10 &   0.0100 &            0.098 \\
+   1.5 & 10 &   0.0010 &            0.484 \\
+   1.5 & 10 &   0.0001 &            0.370 \\
+   1.5 & 20 &   0.0100 &            0.020 \\
+   1.5 & 20 &   0.0010 &            0.412 \\
+   1.5 & 20 &   0.0001 &            0.460 \\
+   2.0 &  5 &   0.0100 &            0.272 \\
+   2.0 &  5 &   0.0010 &            0.448 \\
+   2.0 &  5 &   0.0001 &            0.418 \\
+   2.0 & 10 &   0.0100 &            0.242 \\
+   2.0 & 10 &   0.0010 &            0.446 \\
+   2.0 & 10 &   0.0001 &            0.398 \\
+   2.0 & 20 &   0.0100 &            0.208 \\
+   2.0 & 20 &   0.0010 &            0.436 \\
+   2.0 & 20 &   0.0001 &            0.474 \\
+ \bottomrule
+ \end{tabular}
+\end{center}
+ \caption{\label{tab:hmc_gridsearch} Grid search across candidate distribution variances}
+\end{table}
+
+
+
+
 \subsection{Importance sampling}
 \label{sec:a_is}
 \subsubsection{Derivation of $p(\sigma^2 \mid \mu, \gamma, Y_{1,2})$}
@@ -538,3 +813,5 @@ By symmetry with posterior conditional probability of $\mu$,
     \end{matrix*}\right), \nu=2(n_1 + n_2) - 4 \right)
 \end{align*}
 \end{document}
+
+

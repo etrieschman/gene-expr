@@ -52,7 +52,7 @@ def prob_mh_cand(x, theta, var_mg=0.001, var_t=0.1, var_ss=0.1):
     std_ss = np.sqrt(var_ss)
     
     p = (sps.norm.pdf(x=np.log(x_ss), loc=np.log(ss), scale=std_ss) * 
-         np.abs(np.exp(np.log(ss))) * # jacobian for transformation
+         np.abs(1/ss) * # jacobian for transformation
          sps.truncnorm.pdf(x=x_tau, a=(0-tau)/std_t, b=(1-tau)/std_t, loc=tau, scale=std_t) * 
          sps.multivariate_normal.pdf(x=np.array([x_mu1, x_mu2, x_gam1, x_gam2]), 
                                      mean=np.array([mu1, mu2, gam1, gam2]), cov=var_mg))
@@ -152,3 +152,63 @@ def val_gibbs_gam(block_theta, Y, groups):
 def prob_HMC(theta, p, M_inv, Y, groups):
     prob = prob_post(theta, Y, groups)*torch.exp(-(1/2)*torch.matmul(p, torch.matmul(M_inv, p)))
     return prob
+
+
+# IS helper function
+def is_tdist_params(Y, groups):
+    #get counts
+    __, ns = np.unique(groups, return_counts=True)
+    n = ns.sum()
+    
+    # t distribution parameters for mu and gamma
+    M = (torch.sum(torch.square(Y[groups==1] - torch.mean(Y[groups == 1], axis=0))) + 
+         torch.sum(torch.square(Y[groups==2] - torch.mean(Y[groups == 2], axis=0)))).detach().numpy()
+    t_nu = 2*(ns[0] + ns[1]) - 4
+    t_Sigma = M/t_nu * torch.diag(torch.tensor([1/ns[0], 1/ns[0], 1/ns[1], 1/ns[1]]))
+    t_mu = torch.cat([torch.mean(Y[groups == 1], axis=0), torch.mean(Y[groups == 2], axis=0)]).detach().numpy()
+    
+    return t_mu, t_Sigma, t_nu
+
+
+# generate candidate value for IS
+def val_is_cand(Y, groups):
+    std_d = 0.001
+    
+    #get counts
+    __, ns = np.unique(groups, return_counts=True)
+    n = ns.sum()
+   
+    # sample mu and gamma from t
+    t_mu, t_Sigma, t_nu = is_tdist_params(Y, groups)
+
+    mu1, mu2, gam1, gam2 = sps.multivariate_t.rvs(loc=t_mu, shape=t_Sigma, df=t_nu)
+    mu = torch.tensor([mu1, mu2])
+    gam = torch.tensor([gam1, gam2])
+    
+    # sample ss from inverse gamma
+    sum_square = (torch.sum(torch.square(Y[groups == 1] - mu)) + 
+                  torch.sum(torch.square(Y[groups == 2] - gam))).detach().numpy()
+    ss = sps.invgamma.rvs(a=ns[0] + ns[1], scale=sum_square/2)
+    
+    tau = sps.uniform.rvs(0, 1)
+    
+    return ss, tau, mu1, mu2, gam1, gam2
+
+
+# estimate IS weight for given candidate value
+def weight_is_cand(theta, Y, groups):
+    # unravel theta
+    ss, tau, mu1, mu2, gam1, gam2 = theta
+    mu = torch.tensor([mu1, mu2])
+    gam = torch.tensor([gam1, gam2])
+    
+    #get counts
+    __, ns = np.unique(groups, return_counts=True)
+    n = ns.sum()
+    
+    sum_square = (torch.sum(torch.square(Y[groups == 3] - (mu + gam)/2)) + 
+                  torch.sum(torch.square(Y[groups == 4] - tau*mu - (1-tau)*gam)))
+    
+    u = (1/ss)**(ns[2] + ns[3]) * torch.exp(-1/(2*ss) * sum_square)
+    
+    return u
